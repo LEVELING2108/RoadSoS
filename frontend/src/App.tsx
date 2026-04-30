@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Phone, 
   Navigation, 
@@ -17,9 +18,11 @@ import {
   Map as MapIcon, 
   X, 
   MessageSquare, 
-  User 
+  User,
+  Mic,
+  MicOff 
 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { FIRST_AID_DATA } from './data/firstAid';
@@ -82,15 +85,54 @@ function App() {
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [showSettings, setShowSettings] = useState(false);
   const [contacts, setContacts] = useState<string[]>([]);
+  const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [isSupported, setIsSupported] = useState(false);
+  const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
+  const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [profile, setProfile] = useState({
     name: '',
     bloodGroup: '',
     medicalNotes: ''
   });
   const isMounted = useRef(true);
+  const ws = useRef<WebSocket | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     isMounted.current = true;
+
+    // Check speech support
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setIsSupported(true);
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event: any) => {
+        const transcript = Array.from(event.results)
+          .map((result: any) => result[0])
+          .map((result: any) => result.transcript)
+          .join('')
+          .toLowerCase();
+
+        if (transcript.includes('help help help')) {
+          triggerHaptic([500, 200, 500]);
+          getEmergencyServices();
+          recognition.stop();
+          setIsListening(false);
+        }
+      };
+
+      recognition.onend = () => {
+        if (isListening) recognition.start();
+      };
+
+      recognitionRef.current = recognition;
+    }
+
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
     window.addEventListener('online', handleOnline);
@@ -109,12 +151,83 @@ function App() {
     if (savedProfile) setProfile(JSON.parse(savedProfile));
 
     fetchLocation();
+
+    // Check if we are in track mode (e.g. /?track=id)
+    const urlParams = new URLSearchParams(window.location.search);
+    const trackId = urlParams.get('track');
+    if (trackId) {
+      joinTrackingSession(trackId);
+    }
+
     return () => {
       isMounted.current = false;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      if (ws.current) ws.current.close();
     };
   }, []);
+
+  const fetchRoute = async (start: [number, number], end: [number, number]) => {
+    try {
+      const response = await axios.get(
+        `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`
+      );
+      const coords = response.data.routes[0].geometry.coordinates.map((c: any) => [c[1], c[0]]);
+      setRouteCoordinates(coords);
+    } catch (error) {
+      console.error("Routing error:", error);
+    }
+  };
+
+  const joinTrackingSession = (id: string) => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
+    const socket = new WebSocket(`${protocol}//${host}/ws/track/${id}`);
+    
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.lat && data.lon) {
+        setLocation({ lat: data.lat, lon: data.lon });
+        setViewMode('map');
+        setError("LIVE TRACKING ACTIVE: You are watching a shared location.");
+      }
+    };
+    
+    ws.current = socket;
+    setTrackingSessionId(id);
+  };
+
+  const startTracking = async (lat: number, lon: number) => {
+    try {
+      const res = await axios.post('/api/create-session');
+      const id = res.data.session_id;
+      setTrackingSessionId(id);
+      
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
+      const socket = new WebSocket(`${protocol}//${host}/ws/track/${id}`);
+      
+      socket.onopen = () => {
+        socket.send(JSON.stringify({ lat, lon }));
+      };
+      
+      ws.current = socket;
+
+      // Start watching position and streaming
+      if ("geolocation" in navigator) {
+        navigator.geolocation.watchPosition((pos) => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ 
+              lat: pos.coords.latitude, 
+              lon: pos.coords.longitude 
+            }));
+          }
+        });
+      }
+    } catch (e) {
+      console.error("Failed to start tracking:", e);
+    }
+  };
 
   useEffect(() => {
     document.body.className = isDarkMode ? '' : 'light-mode';
@@ -124,6 +237,23 @@ function App() {
   const saveProfile = (newProfile: any) => {
     setProfile(newProfile);
     localStorage.setItem('roadsos_profile', JSON.stringify(newProfile));
+  };
+
+  const toggleListening = () => {
+    triggerHaptic(50);
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+    } else {
+      recognitionRef.current?.start();
+      setIsListening(true);
+    }
+  };
+
+  const triggerHaptic = (pattern: number | number[] = 50) => {
+    if ('vibrate' in navigator) {
+      navigator.vibrate(pattern);
+    }
   };
 
   const fetchLocation = () => {
@@ -161,6 +291,9 @@ function App() {
     
     const performFetch = async (lat: number, lon: number) => {
       try {
+        // Start live tracking session
+        startTracking(lat, lon);
+        
         const res = await axios.get(`/api/emergency-services?lat=${lat}&lon=${lon}&radius=5000`);
         if (isMounted.current) {
           setServices(res.data.services);
@@ -242,7 +375,8 @@ function App() {
     }
     
     const locStr = location ? `https://www.google.com/maps?q=${location.lat},${location.lon}` : "Unknown Location";
-    const message = encodeURIComponent(`EMERGENCY SOS: I need help! My current location is: ${locStr}`);
+    const trackingLink = trackingSessionId ? `${window.location.origin}/?track=${trackingSessionId}` : "";
+    const message = encodeURIComponent(`EMERGENCY SOS: I need help! My current location is: ${locStr}. Track me live: ${trackingLink}`);
     
     // Web browsers generally restrict opening multiple links at once.
     // We'll join contacts with a semicolon for some mobile OS support, 
@@ -258,12 +392,34 @@ function App() {
   return (
     <div className={`app-container ${isDarkMode ? '' : 'light-mode'}`}>
       {isOffline && <div className="offline-notice">WORKING OFFLINE • CACHED DATA ONLY</div>}
+      <AnimatePresence>
+        {isListening && (
+          <motion.div 
+            className="offline-notice" 
+            style={{ background: 'var(--primary-red)', color: 'white' }}
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+          >
+            VOICE SOS ACTIVE: Say "Help Help Help"
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       <header>
         <div className="header-titles">
           <h1>ROADSoS</h1>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
+          {isSupported && (
+            <button 
+              className="theme-toggle" 
+              onClick={toggleListening} 
+              style={{ color: isListening ? 'var(--primary-red)' : 'inherit' }}
+            >
+              {isListening ? <Mic size={20} /> : <MicOff size={20} />}
+            </button>
+          )}
           <button className="theme-toggle" onClick={() => setShowSettings(true)}>
             <User size={20} />
           </button>
@@ -293,15 +449,27 @@ function App() {
         )}
 
         <div className="sos-section">
-          {!loading && <div className="sos-ripple"></div>}
-          <button 
+          {!loading && (
+            <motion.div 
+              className="sos-ripple"
+              initial={{ scale: 1, opacity: 0.8 }}
+              animate={{ scale: 1.8, opacity: 0 }}
+              transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }}
+            />
+          )}
+          <motion.button 
             className={`sos-button ${loading ? 'loading' : ''}`} 
-            onClick={getEmergencyServices} 
+            onClick={() => {
+              triggerHaptic([100, 50, 100]);
+              getEmergencyServices();
+            }} 
             disabled={loading}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.9 }}
           >
             <AlertTriangle size={32} fill="white" />
             <span style={{ fontSize: '0.7rem', marginTop: 4 }}>{loading ? 'SYNCING...' : 'S O S'}</span>
-          </button>
+          </motion.button>
         </div>
 
         {contacts.length > 0 && (
@@ -315,11 +483,21 @@ function App() {
         )}
 
         <div className="category-bar">
-          {CATEGORIES.map(cat => (
-            <div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => setActiveCategory(cat.id)}>
+          {CATEGORIES.map((cat, idx) => (
+            <motion.div 
+              key={cat.id} 
+              className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} 
+              onClick={() => {
+                triggerHaptic(10);
+                setActiveCategory(cat.id);
+              }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+            >
               <cat.icon size={18} />
               {cat.label}
-            </div>
+            </motion.div>
           ))}
         </div>
 
@@ -351,54 +529,85 @@ function App() {
           ) : (
             <div className="services-container">
               <div className={`service-list-section ${viewMode === 'map' ? 'mobile-hidden' : ''}`}>
-                {filteredServices.length > 0 ? filteredServices.map(service => (
-                  <div key={service.id} className="service-card">
-                    <div 
-                      className="service-img" 
-                      style={service.image ? { backgroundImage: `url(${service.image})` } : {}}
+                <AnimatePresence mode="popLayout">
+                  {filteredServices.length > 0 ? filteredServices.map((service, idx) => (
+                    <motion.div 
+                      key={service.id} 
+                      className="service-card"
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ delay: idx * 0.05 }}
+                      layout
                     >
-                      {!service.image && <ImageIcon size={32} opacity={0.3} />}
-                    </div>
-                    
-                    <div className="service-details">
-                      <h3>{service.name}</h3>
-                      <table className="detail-table">
-                        <tbody>
-                          <tr>
-                            <td className="label">Location</td>
-                            <td className="value"><MapPin size={12} /> {service.address || 'GPS Coordinate'}</td>
-                          </tr>
-                          {service.opening_hours && (
+                      <div 
+                        className="service-img" 
+                        style={service.image ? { backgroundImage: `url(${service.image})` } : {}}
+                      >
+                        {!service.image && <ImageIcon size={32} opacity={0.3} />}
+                      </div>
+                      
+                      <div className="service-details">
+                        <h3>{service.name}</h3>
+                        <table className="detail-table">
+                          <tbody>
                             <tr>
-                              <td className="label">Hours</td>
-                              <td className="value"><Clock size={12} /> {service.opening_hours}</td>
+                              <td className="label">Location</td>
+                              <td className="value"><MapPin size={12} /> {service.address || 'GPS Coordinate'}</td>
                             </tr>
-                          )}
-                          {service.phone && (
-                            <tr>
-                              <td className="label">Contact</td>
-                              <td className="value"><Phone size={12} /> {service.phone}</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
+                            {service.opening_hours && (
+                              <tr>
+                                <td className="label">Hours</td>
+                                <td className="value"><Clock size={12} /> {service.opening_hours}</td>
+                              </tr>
+                            )}
+                            {service.phone && (
+                              <tr>
+                                <td className="label">Contact</td>
+                                <td className="value"><Phone size={12} /> {service.phone}</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
 
-                    <div className="card-actions">
-                      <button className="btn btn-call" onClick={() => service.phone && window.open(`tel:${service.phone}`)}>
-                        <Phone size={16} /> CALL
-                      </button>
-                      <button className="btn btn-nav" onClick={() => window.open(`https://www.google.com/maps/dir/?api=1&destination=${service.lat},${service.lon}`)}>
-                        <Navigation size={16} /> MAP
-                      </button>
-                    </div>
-                  </div>
-                )) : (
-                  <div style={{ textAlign: 'center', marginTop: '3rem', opacity: 0.5 }}>
-                    <p>No active services in this category.</p>
-                    <p>Tap SOS to refresh nearby data.</p>
-                  </div>
-                )}
+                      <div className="card-actions">
+                        <button className="btn btn-call" onClick={() => {
+                          triggerHaptic(20);
+                          service.phone && window.open(`tel:${service.phone}`);
+                        }}>
+                          <Phone size={16} /> CALL
+                        </button>
+                        <button 
+                          className={`btn ${selectedService?.id === service.id ? 'btn-call' : 'btn-nav'}`} 
+                          onClick={() => {
+                            triggerHaptic(50);
+                            setSelectedService(service);
+                            if (location) fetchRoute([location.lat, location.lon], [service.lat, service.lon]);
+                            setViewMode('map');
+                          }}
+                        >
+                          <Navigation size={16} /> {selectedService?.id === service.id ? 'ROUTING...' : 'NAVIGATE'}
+                        </button>
+                        <button className="btn btn-nav" onClick={() => {
+                          triggerHaptic(20);
+                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${service.lat},${service.lon}`);
+                        }}>
+                          <ImageIcon size={16} /> EXTERNAL
+                        </button>
+                      </div>
+                    </motion.div>
+                  )) : (
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 0.5 }}
+                      style={{ textAlign: 'center', marginTop: '3rem' }}
+                    >
+                      <p>No active services in this category.</p>
+                      <p>Tap SOS to refresh nearby data.</p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               {location && (
@@ -415,6 +624,9 @@ function App() {
                     <Marker position={[location.lat, location.lon]} icon={UserIcon}>
                       <Popup>You are here</Popup>
                     </Marker>
+                    {routeCoordinates.length > 0 && (
+                      <Polyline positions={routeCoordinates} color="var(--primary-red)" weight={5} opacity={0.7} />
+                    )}
                     {filteredServices.map(s => (
                       <Marker key={s.id} position={[s.lat, s.lon]}>
                         <Popup>

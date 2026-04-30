@@ -1,9 +1,17 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import logging
+import uuid
+import json
+from typing import Dict, List
 
 app = FastAPI(title="ROADSoS API")
+
+# Store active tracking sessions: {session_id: [websocket_clients]}
+tracking_sessions: Dict[str, List[WebSocket]] = {}
+# Store last known location for each session: {session_id: {lat, lon}}
+session_locations: Dict[str, dict] = {}
 
 # Enable CORS for frontend integration
 app.add_middleware(
@@ -16,6 +24,47 @@ app.add_middleware(
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 HEADERS = {"User-Agent": "ROADSoS/1.0 (https://github.com/yourusername/roadsos)"}
+
+@app.post("/api/create-session")
+async def create_session():
+    session_id = str(uuid.uuid4())
+    tracking_sessions[session_id] = []
+    return {"session_id": session_id}
+
+@app.websocket("/ws/track/{session_id}")
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    await websocket.accept()
+    if session_id not in tracking_sessions:
+        tracking_sessions[session_id] = []
+    
+    tracking_sessions[session_id].append(websocket)
+    
+    # If we already have a location, send it immediately to the new client
+    if session_id in session_locations:
+        await websocket.send_json(session_locations[session_id])
+    
+    try:
+        while True:
+            # Receive coordinate updates from the user
+            data = await websocket.receive_text()
+            location_data = json.loads(data)
+            
+            # Store last known location
+            session_locations[session_id] = location_data
+            
+            # Broadcast to all other clients in this session
+            for client in tracking_sessions[session_id]:
+                if client != websocket:
+                    try:
+                        await client.send_json(location_data)
+                    except:
+                        pass
+    except WebSocketDisconnect:
+        tracking_sessions[session_id].remove(websocket)
+        if not tracking_sessions[session_id]:
+            # Clean up if no one is watching/streaming
+            # We keep locations for a while, but in a real app we'd add TTL
+            pass
 
 @app.get("/api/emergency-services")
 async def get_emergency_services(

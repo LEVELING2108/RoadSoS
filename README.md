@@ -11,13 +11,14 @@
 
 ## 🌟 Key Features
 
-- **🎯 Precision SOS**: One-tap emergency discovery using high-accuracy GPS.
-- **🗺️ Interactive Mapping**: Real-time visualization of emergency responders via Leaflet.
+- **🎯 Precision SOS**: One-tap emergency discovery using high-accuracy GPS with haptic feedback.
+- **🎙️ Voice-Activated SOS**: Hands-free emergency trigger using the Web Speech API (Say "Help Help Help").
+- **🛰️ Live tracking (WebSockets)**: Generate real-time tracking links for emergency contacts via secure WebSocket streams.
+- **🗺️ In-App Navigation**: Integrated OSRM routing engine providing turn-by-turn directions directly on the map.
 - **🏥 Categorized Search**: Quickly filter between Medical, Security, Roadside Repairs, and First Aid.
 - **🩸 Emergency Profile**: Securely store blood group and medical notes for first responders.
 - **📡 Offline Resiliency**: PWA-ready with caching for offline access to critical First Aid data.
-- **🌓 Dark Mode**: Modern, high-contrast interface designed for clarity in all lighting conditions.
-- **📱 One-Touch Alerts**: SMS-based emergency contact alerts with automated location sharing.
+- **🌓 Dark Mode**: Modern, high-contrast interface with fluid `framer-motion` animations.
 
 ---
 
@@ -25,6 +26,10 @@
 
 ### Frontend
 - **Framework**: React 19 (TypeScript)
+- **Animations**: Framer Motion (Gestures & Staggered Transitions)
+- **Real-Time**: WebSockets (Live Location Streaming)
+- **Voice**: Web Speech API
+- **Routing**: OSRM API / Leaflet Polyline
 - **Tooling**: Vite (Lightning-fast HMR)
 - **Styling**: Modern Vanilla CSS with CSS Variables
 - **Mapping**: React-Leaflet / OpenStreetMap
@@ -33,6 +38,7 @@
 
 ### Backend
 - **Framework**: FastAPI (Python 3.10+)
+- **Real-Time**: WebSockets (Asynchronous session management)
 - **Networking**: HTTPX (Asynchronous requests)
 - **Data Source**: Overpass API (OpenStreetMap)
 
