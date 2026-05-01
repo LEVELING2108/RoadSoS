@@ -22,9 +22,10 @@ import {
   Mic,
   MicOff,
   Camera,
-  Shield
-  } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
+  Shield,
+  Activity,
+  Zap
+  } from 'lucide-react';import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { FIRST_AID_DATA } from './data/firstAid';
@@ -95,6 +96,9 @@ function App() {
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isMonitoringVitals, setIsMonitoringVitals] = useState(false);
+  const [heartRate, setHeartRate] = useState<number | null>(null);
+  const [vitalsHistory, setVitalsHistory] = useState<number[]>([]);
   const [triageStep, setTriageStep] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [profile, setProfile] = useState({
@@ -215,6 +219,85 @@ function App() {
     } else {
       recognitionRef.current?.start();
       setIsListening(true);
+    }
+  };
+
+  const toggleVitalsMonitoring = async () => {
+    if (isMonitoringVitals) {
+      setIsMonitoringVitals(false);
+      setHeartRate(null);
+      setVitalsHistory([]);
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      setIsMonitoringVitals(true);
+      triggerHaptic(50);
+
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.play();
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      
+      let samples: number[] = [];
+      let lastTime = Date.now();
+
+      const processFrame = () => {
+        if (!isMounted.current || !stream.active) return;
+
+        if (video.readyState === video.HAVE_ENOUGH_DATA && ctx) {
+          canvas.width = 100;
+          canvas.height = 100;
+          ctx.drawImage(video, 25, 25, 50, 50, 0, 0, 100, 100);
+          
+          const imageData = ctx.getImageData(0, 0, 100, 100);
+          const data = imageData.data;
+          
+          let greenSum = 0;
+          for (let i = 1; i < data.length; i += 4) {
+            greenSum += data[i];
+          }
+          const avgGreen = greenSum / (data.length / 4);
+          
+          samples.push(avgGreen);
+          if (samples.length > 150) samples.shift();
+
+          // Calculate BPM every 2 seconds
+          const now = Date.now();
+          if (now - lastTime > 2000 && samples.length > 60) {
+            // Simple peak counting on the green channel variance
+            let peaks = 0;
+            const threshold = 0.2; // Sensitivity
+            const mean = samples.reduce((a, b) => a + b) / samples.length;
+            
+            for (let i = 1; i < samples.length - 1; i++) {
+              if (samples[i] > mean + threshold && samples[i] > samples[i-1] && samples[i] > samples[i+1]) {
+                peaks++;
+              }
+            }
+            
+            const bpm = Math.round((peaks * 60) / (samples.length / 30)); // Assuming 30fps
+            if (bpm > 40 && bpm < 180) {
+              setHeartRate(bpm);
+              setVitalsHistory(prev => [...prev.slice(-20), bpm]);
+            }
+            lastTime = now;
+          }
+        }
+
+        if (isMounted.current) requestAnimationFrame(processFrame);
+        else {
+          stream.getTracks().forEach(t => t.stop());
+        }
+      };
+
+      requestAnimationFrame(processFrame);
+    } catch (err) {
+      console.error("Vitals Error:", err);
+      setError("CAMERA BLOCKED: Vitals monitoring requires front camera access.");
     }
   };
 
@@ -492,6 +575,13 @@ function App() {
               {isListening ? <Mic size={20} /> : <MicOff size={20} />}
             </button>
           )}
+          <button 
+            className="theme-toggle" 
+            onClick={toggleVitalsMonitoring} 
+            style={{ color: isMonitoringVitals ? 'var(--primary-red)' : 'inherit' }}
+          >
+            <Activity size={20} />
+          </button>
           <button className="theme-toggle" onClick={() => setShowSettings(true)}>
             <User size={20} />
           </button>
@@ -573,7 +663,7 @@ function App() {
             className="first-aid-card"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            style={{ borderLeftColor: '#007aff', marginBottom: '2rem' }}
+            style={{ borderLeftColor: '#007aff', marginBottom: '1rem' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <h3 style={{ color: '#007aff', margin: 0, fontSize: '1rem' }}>AI Scene Analysis</h3>
@@ -582,6 +672,52 @@ function App() {
             <div className="ai-report-content" style={{ fontSize: '0.85rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
               {aiAnalysis}
             </div>
+          </motion.div>
+        )}
+
+        {isMonitoringVitals && (
+          <motion.div 
+            className="first-aid-card vitals-card"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            style={{ borderLeftColor: '#ff3b30' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ color: '#ff3b30', margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Activity size={18} /> AI VITALS MONITOR
+              </h3>
+              <div className="vitals-live-tag">LIVE rPPG</div>
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', padding: '10px 0' }}>
+              <div className="hr-display">
+                <motion.div 
+                  animate={{ scale: [1, 1.2, 1] }} 
+                  transition={{ repeat: Infinity, duration: 0.8 }}
+                >
+                  <Heart size={32} fill="#ff3b30" color="#ff3b30" />
+                </motion.div>
+                <div style={{ textAlign: 'center' }}>
+                  <span className="bpm-value">{heartRate || '--'}</span>
+                  <span className="bpm-label">BPM</span>
+                </div>
+              </div>
+              
+              <div className="vitals-graph">
+                {vitalsHistory.map((h, i) => (
+                  <motion.div 
+                    key={i}
+                    className="graph-bar"
+                    initial={{ height: 0 }}
+                    animate={{ height: `${(h / 150) * 100}%` }}
+                    style={{ background: h > 100 ? '#ff3b30' : '#34c759' }}
+                  />
+                ))}
+              </div>
+            </div>
+            <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '1rem' }}>
+              <Zap size={10} /> Extracting physiological data via micro-color facial analysis. Keep face visible in camera.
+            </p>
           </motion.div>
         )}
 

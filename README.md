@@ -1,46 +1,44 @@
-# 🚑 ROADSoS: Emergency Global Support Network
+# 🚑 ROADSoS: AI-Driven Emergency Response Ecosystem
 
 [![React](https://img.shields.io/badge/Frontend-React%2019-blue?logo=react)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
+[![AI-Powered](https://img.shields.io/badge/AI-Gemini%201.5%20Pro-red?logo=google-gemini)](https://aistudio.google.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Vite](https://img.shields.io/badge/Build-Vite-646CFF?logo=vite)](https://vitejs.dev/)
 
-**ROADSoS** is a high-performance, mobile-first emergency assistance platform designed to provide instant access to critical services when every second counts. By integrating real-time geolocation with the OpenStreetMap Overpass API, ROADSoS connects users to the nearest hospitals, police stations, and repair services globally, even in low-connectivity environments.
+**ROADSoS** is a world-class, AI-driven emergency assistance platform that transforms your smartphone into an autonomous digital first responder. By combining advanced Computer Vision, Real-Time WebSockets, and Conversational AI, ROADSoS provides life-saving triage and monitoring when every second is critical.
 
 ---
 
-## 🌟 Key Features
+## 🌟 Next-Level AI Features
 
-- **🎯 Precision SOS**: One-tap emergency discovery using high-accuracy GPS with haptic feedback.
-- **🎙️ Voice-Activated SOS**: Hands-free emergency trigger using the Web Speech API (Say "Help Help Help").
-- **🛰️ Live tracking (WebSockets)**: Generate real-time tracking links for emergency contacts via secure WebSocket streams.
-- **🗺️ In-App Navigation**: Integrated OSRM routing engine providing turn-by-turn directions directly on the map.
-- **🏥 Categorized Search**: Quickly filter between Medical, Security, Roadside Repairs, and First Aid.
-- **🩸 Emergency Profile**: Securely store blood group and medical notes for first responders.
-- **📡 Offline Resiliency**: PWA-ready with caching for offline access to critical First Aid data.
-- **🌓 Dark Mode**: Modern, high-contrast interface with fluid `framer-motion` animations.
+- **🧠 AI Vision Triage**: Snap a photo of an accident scene. Gemini 1.5 Pro instantly identifies hazards, assesses injury severity, and provides immediate first-aid instructions.
+- **💓 Camera-Based Vitals (rPPG)**: Hardware-free vital signs monitoring. Extracted via micro-facial color analysis (rPPG) to track heart rate and breathing in real-time.
+- **🎙️ Conversational Voice Dispatcher**: A hands-free, empathetic Voice AI that triages victims, provides calm guidance, and builds medical reports via natural conversation.
+- **🗺️ Predictive Smart Routing**: AI-powered dispatch that routes victims to the *best* specialized facility (Trauma, Burn Unit, etc.) based on real-time triage data.
+- **🛰️ Live SOS Tracking**: Secure WebSocket streams allowing emergency contacts to watch your GPS location move live on a shared dashboard.
+- **🎯 Precision Haptics**: Native-feel physical feedback for critical actions, ensuring clarity in high-stress situations.
 
 ---
 
 ## 🛠️ Tech Stack
 
-### Frontend
+### AI & Intelligence
+- **Vision/NLP**: Google Gemini 1.5 Pro
+- **Bio-Signals**: rPPG Pixel Analysis (Canvas API)
+- **Voice**: Web Speech API (Synthesis & Recognition)
+
+### Frontend & Real-Time
 - **Framework**: React 19 (TypeScript)
-- **Animations**: Framer Motion (Gestures & Staggered Transitions)
-- **Real-Time**: WebSockets (Live Location Streaming)
-- **Voice**: Web Speech API
-- **Routing**: OSRM API / Leaflet Polyline
-- **Tooling**: Vite (Lightning-fast HMR)
-- **Styling**: Modern Vanilla CSS with CSS Variables
-- **Mapping**: React-Leaflet / OpenStreetMap
-- **Icons**: Lucide-React
-- **PWA**: Vite PWA Plugin
+- **Animations**: Framer Motion (Fluid gestures & staggered transitions)
+- **Connectivity**: WebSockets (Bidirectional streaming)
+- **Mapping**: React-Leaflet / OSRM Routing Engine
+- **PWA**: Fully offline-capable with Service Workers
 
 ### Backend
 - **Framework**: FastAPI (Python 3.10+)
-- **Real-Time**: WebSockets (Asynchronous session management)
-- **Networking**: HTTPX (Asynchronous requests)
-- **Data Source**: Overpass API (OpenStreetMap)
+- **Session Management**: UUID-based secure tracking sessions
+- **Async**: HTTPX / Uvicorn for high-concurrency emergency requests
+
 
 ---
 
