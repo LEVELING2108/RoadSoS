@@ -241,6 +241,24 @@ header {
   border-radius: 16px;
   overflow: hidden;
   border: 1px solid var(--card-border);
+  position: relative;
+}
+
+.recommended-card {
+  border: 2px solid #007aff;
+  box-shadow: 0 0 20px rgba(0, 122, 255, 0.2);
+}
+
+.recommended-badge {
+  background: #007aff;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0.5px;
 }
 
 .service-img {

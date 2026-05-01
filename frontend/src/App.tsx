@@ -15,14 +15,15 @@ import {
   Clock, 
   Heart,
   List,
-  Map as MapIcon, 
+  MapIcon, 
   X, 
   MessageSquare, 
   User,
   Mic,
   MicOff,
-  Camera 
-} from 'lucide-react';
+  Camera,
+  Shield
+  } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -59,6 +60,7 @@ interface Service {
   lon: number;
   image?: string;
   opening_hours?: string;
+  is_recommended?: boolean;
 }
 
 const CATEGORIES = [
@@ -358,7 +360,10 @@ function App() {
         // Start live tracking session
         startTracking(lat, lon);
         
-        const res = await axios.get(`/api/emergency-services?lat=${lat}&lon=${lon}&radius=5000`);
+        // Phase 3: Smart Routing - Pass AI context if available
+        const contextParam = aiAnalysis ? `&context=${encodeURIComponent(aiAnalysis)}` : "";
+        const res = await axios.get(`/api/emergency-services?lat=${lat}&lon=${lon}&radius=5000${contextParam}`);
+        
         if (isMounted.current) {
           setServices(res.data.services);
           localStorage.setItem('roadsos_cache', JSON.stringify(res.data.services));
@@ -641,13 +646,18 @@ function App() {
                   {filteredServices.length > 0 ? filteredServices.map((service, idx) => (
                     <motion.div 
                       key={service.id} 
-                      className="service-card"
+                      className={`service-card ${service.is_recommended ? 'recommended-card' : ''}`}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.95 }}
                       transition={{ delay: idx * 0.05 }}
                       layout
                     >
+                      {service.is_recommended && (
+                        <div className="recommended-badge">
+                          <Shield size={12} fill="white" /> AI RECOMMENDED FOR THIS EMERGENCY
+                        </div>
+                      )}
                       <div 
                         className="service-img" 
                         style={service.image ? { backgroundImage: `url(${service.image})` } : {}}

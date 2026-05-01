@@ -113,10 +113,11 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 async def get_emergency_services(
     lat: float = Query(..., description="Latitude of the location"),
     lon: float = Query(..., description="Longitude of the location"),
-    radius: int = Query(5000, description="Search radius in meters")
+    radius: int = Query(5000, description="Search radius in meters"),
+    context: str = Query(None, description="Triage context for AI recommendation")
 ):
     """
-    Fetch nearby emergency services (hospitals, police, rescue) from Overpass API.
+    Fetch nearby emergency services and optionally rank them using AI based on context.
     """
     query = f"""
     [out:json];
@@ -149,40 +150,47 @@ async def get_emergency_services(
             data = response.json()
         except Exception as e:
             logging.error(f"Error fetching data from Overpass: {e}")
-            raise HTTPException(status_code=503, detail="Emergency services provider is currently unavailable. Please try again or use direct dial.")
+            raise HTTPException(status_code=503, detail="Emergency services provider unavailable.")
 
     elements = data.get("elements", [])
     results = []
     
     for el in elements:
         tags = el.get("tags", {})
-        
-        # Determine a primary category
-        category = (
-            tags.get("amenity") or 
-            tags.get("shop") or 
-            tags.get("emergency") or 
-            tags.get("healthcare")
-        )
-        
-        if not category:
-            continue
+        category = tags.get("amenity") or tags.get("shop") or tags.get("emergency") or tags.get("healthcare")
+        if not category: continue
 
-        item = {
+        results.append({
             "id": el.get("id"),
-            "type": el.get("type"),
-            "lat": el.get("lat") or el.get("center", {}).get("lat"),
-            "lon": el.get("lon") or el.get("center", {}).get("lon"),
-            "name": tags.get("name") or tags.get("operator") or f"Nearby {category.replace('_', ' ').title()}",
+            "name": tags.get("name") or f"Nearby {category.replace('_', ' ').title()}",
             "category": category,
             "phone": tags.get("phone") or tags.get("contact:phone") or tags.get("emergency:phone"),
-            "website": tags.get("website") or tags.get("contact:website"),
+            "lat": el.get("lat") or el.get("center", {}).get("lat"),
+            "lon": el.get("lon") or el.get("center", {}).get("lon"),
             "address": tags.get("addr:full") or f"{tags.get('addr:street', '')} {tags.get('addr:housenumber', '')}".strip(),
-            "image": tags.get("image") or tags.get("wikimedia_commons"),
-            "opening_hours": tags.get("opening_hours")
-        }
-        results.append(item)
+            "is_recommended": False
+        })
             
+    # AI Recommendation Engine
+    if context and model and results:
+        try:
+            service_names = [r["name"] for r in results[:10]]
+            recommend_prompt = f"""
+            Triage Context: {context}
+            Nearby Services: {', '.join(service_names)}
+            
+            Based on the triage context, which ONE of these services is the BEST fit for the patient's immediate needs? 
+            Respond ONLY with the EXACT name of the service from the list. If none fit, respond with 'None'.
+            """
+            ai_res = model.generate_content(recommend_prompt)
+            recommended_name = ai_res.text.strip()
+            
+            for r in results:
+                if r["name"] == recommended_name:
+                    r["is_recommended"] = True
+        except Exception as e:
+            logging.error(f"AI Recommendation Error: {e}")
+
     return {"services": results}
 
 @app.get("/health")
