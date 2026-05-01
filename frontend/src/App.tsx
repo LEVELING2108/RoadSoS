@@ -93,6 +93,8 @@ function App() {
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [triageStep, setTriageStep] = useState(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [profile, setProfile] = useState({
     name: '',
     bloodGroup: '',
@@ -112,8 +114,6 @@ function App() {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'en-US';
-
       recognition.onresult = (event: any) => {
         const transcript = Array.from(event.results)
           .map((result: any) => result[0])
@@ -121,11 +121,15 @@ function App() {
           .join('')
           .toLowerCase();
 
-        if (transcript.includes('help help help')) {
+        if (transcript.includes('help help help') && triageStep === 0) {
           triggerHaptic([500, 200, 500]);
-          getEmergencyServices();
-          recognition.stop();
-          setIsListening(false);
+          startVoiceTriage();
+        } else if (isListening && triageStep > 0) {
+          // In a real app, we'd send the transcript to an LLM here
+          // For now, we'll simulate a structured triage flow
+          if (transcript.length > 10) {
+            proceedTriage();
+          }
         }
       };
 
@@ -155,7 +159,6 @@ function App() {
 
     fetchLocation();
 
-    // Check if we are in track mode (e.g. /?track=id)
     const urlParams = new URLSearchParams(window.location.search);
     const trackId = urlParams.get('track');
     if (trackId) {
@@ -169,6 +172,49 @@ function App() {
       if (ws.current) ws.current.close();
     };
   }, []);
+
+  const speak = (text: string) => {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    utterance.pitch = 1;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const startVoiceTriage = () => {
+    setTriageStep(1);
+    getEmergencyServices();
+    speak("ROADSoS Emergency Agent active. I have alerted nearby responders. Are you conscious and able to speak?");
+  };
+
+  const proceedTriage = () => {
+    if (triageStep === 1) {
+      setTriageStep(2);
+      speak("Understood. Are you currently alone, or is someone there with you?");
+    } else if (triageStep === 2) {
+      setTriageStep(3);
+      speak("I am building your medical report. Is there any heavy bleeding or difficulty breathing?");
+    } else if (triageStep === 3) {
+      setTriageStep(4);
+      speak("Responders are on their way. Stay calm and stay on the line. I am tracking your location live.");
+      setTimeout(() => setTriageStep(0), 10000);
+    }
+  };
+
+  const toggleListening = () => {
+    triggerHaptic(50);
+    if (isListening) {
+      recognitionRef.current?.stop();
+      setIsListening(false);
+      setTriageStep(0);
+    } else {
+      recognitionRef.current?.start();
+      setIsListening(true);
+    }
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -266,17 +312,6 @@ function App() {
   const saveProfile = (newProfile: any) => {
     setProfile(newProfile);
     localStorage.setItem('roadsos_profile', JSON.stringify(newProfile));
-  };
-
-  const toggleListening = () => {
-    triggerHaptic(50);
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-    } else {
-      recognitionRef.current?.start();
-      setIsListening(true);
-    }
   };
 
   const triggerHaptic = (pattern: number | number[] = 50) => {
@@ -444,7 +479,10 @@ function App() {
             <button 
               className="theme-toggle" 
               onClick={toggleListening} 
-              style={{ color: isListening ? 'var(--primary-red)' : 'inherit' }}
+              style={{ 
+                color: isListening ? 'var(--primary-red)' : 'inherit',
+                animation: isSpeaking ? 'pulse 1s infinite' : 'none'
+              }}
             >
               {isListening ? <Mic size={20} /> : <MicOff size={20} />}
             </button>
