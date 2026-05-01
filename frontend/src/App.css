@@ -146,8 +146,17 @@ header {
 .sos-section {
   display: flex;
   justify-content: center;
+  align-items: center;
+  gap: 2rem;
   margin: 2rem 0;
+}
+
+.sos-button-wrapper {
   position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
 }
 
 .sos-button {

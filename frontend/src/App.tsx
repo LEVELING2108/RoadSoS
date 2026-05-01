@@ -477,30 +477,32 @@ function App() {
           </div>
         )}
 
-        <div className="sos-section" style={{ gap: '20px' }}>
-          {!loading && (
-            <motion.div 
-              className="sos-ripple"
-              initial={{ scale: 1, opacity: 0.8 }}
-              animate={{ scale: 1.8, opacity: 0 }}
-              transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }}
-            />
-          )}
-          <motion.button 
-            className={`sos-button ${loading ? 'loading' : ''}`} 
-            onClick={() => {
-              triggerHaptic([100, 50, 100]);
-              getEmergencyServices();
-            }} 
-            disabled={loading}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.9 }}
-          >
-            <AlertTriangle size={32} fill="white" />
-            <span style={{ fontSize: '0.7rem', marginTop: 4 }}>{loading ? 'SYNCING...' : 'S O S'}</span>
-          </motion.button>
+        <div className="sos-section">
+          <div className="sos-button-wrapper">
+            {!loading && (
+              <motion.div 
+                className="sos-ripple"
+                initial={{ scale: 1, opacity: 0.8 }}
+                animate={{ scale: 1.8, opacity: 0 }}
+                transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }}
+              />
+            )}
+            <motion.button 
+              className={`sos-button ${loading ? 'loading' : ''}`} 
+              onClick={() => {
+                triggerHaptic([100, 50, 100]);
+                getEmergencyServices();
+              }} 
+              disabled={loading}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.9 }}
+            >
+              <AlertTriangle size={32} fill="white" />
+              <span style={{ fontSize: '0.7rem', marginTop: 4 }}>{loading ? 'SYNCING...' : 'S O S'}</span>
+            </motion.button>
+          </div>
 
-          <div style={{ position: 'relative' }}>
+          <div className="sos-button-wrapper">
             <motion.button 
               className={`sos-button ${isAnalyzing ? 'loading' : ''}`}
               style={{ width: '80px', height: '80px', background: 'var(--tab-active)', boxShadow: 'none' }}
