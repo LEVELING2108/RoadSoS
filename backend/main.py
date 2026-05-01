@@ -1,10 +1,24 @@
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import logging
 import uuid
 import json
+import os
+import google.generativeai as genai
 from typing import Dict, List
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Configure Gemini
+GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
+if GENAI_API_KEY:
+    genai.configure(api_key=GENAI_API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-pro')
+else:
+    logging.warning("GEMINI_API_KEY not found. AI Vision features will be disabled.")
+    model = None
 
 app = FastAPI(title="ROADSoS API")
 
@@ -24,6 +38,35 @@ app.add_middleware(
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 HEADERS = {"User-Agent": "ROADSoS/1.0 (https://github.com/yourusername/roadsos)"}
+
+@app.post("/api/triage")
+async def ai_triage(image: UploadFile = File(...)):
+    if not model:
+        raise HTTPException(status_code=503, detail="AI Service is not configured. Please add GEMINI_API_KEY.")
+    
+    try:
+        image_data = await image.read()
+        
+        prompt = """
+        ACT AS A SENIOR EMERGENCY ROOM TRIAGE OFFICER.
+        Analyze this image from a road accident or emergency scene.
+        1. IDENTIFY IMMEDIATE HAZARDS: (Fire, fuel leaks, unstable vehicles, traffic).
+        2. ASSESS INJURY SEVERITY: (Critical, Urgent, Non-Urgent).
+        3. PROVIDE STEP-BY-STEP FIRST AID: (Clear, actionable instructions for a bystander).
+        4. SPECIFY THE TYPE OF FACILITY NEEDED: (Trauma Center, Burn Unit, General Hospital).
+        
+        KEEP YOUR RESPONSE CONCISE, ACTIONABLE, AND CALM. USE MARKDOWN FOR FORMATTING.
+        """
+        
+        response = model.generate_content([
+            prompt,
+            {"mime_type": "image/jpeg", "data": image_data}
+        ])
+        
+        return {"analysis": response.text}
+    except Exception as e:
+        logging.error(f"AI Triage Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to analyze image with AI.")
 
 @app.post("/api/create-session")
 async def create_session():

@@ -20,7 +20,8 @@ import {
   MessageSquare, 
   User,
   Mic,
-  MicOff 
+  MicOff,
+  Camera 
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
@@ -90,6 +91,8 @@ function App() {
   const [isSupported, setIsSupported] = useState(false);
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [profile, setProfile] = useState({
     name: '',
     bloodGroup: '',
@@ -166,6 +169,32 @@ function App() {
       if (ws.current) ws.current.close();
     };
   }, []);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsAnalyzing(true);
+    setError(null);
+    setAiAnalysis(null);
+    triggerHaptic([100, 50, 100]);
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      const res = await axios.post('/api/triage', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setAiAnalysis(res.data.analysis);
+      triggerHaptic(200);
+    } catch (err: any) {
+      console.error("AI Triage Error:", err);
+      setError(err.response?.data?.detail || "AI Vision analysis failed. Ensure API key is configured.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   const fetchRoute = async (start: [number, number], end: [number, number]) => {
     try {
@@ -448,7 +477,7 @@ function App() {
           </div>
         )}
 
-        <div className="sos-section">
+        <div className="sos-section" style={{ gap: '20px' }}>
           {!loading && (
             <motion.div 
               className="sos-ripple"
@@ -470,7 +499,46 @@ function App() {
             <AlertTriangle size={32} fill="white" />
             <span style={{ fontSize: '0.7rem', marginTop: 4 }}>{loading ? 'SYNCING...' : 'S O S'}</span>
           </motion.button>
+
+          <div style={{ position: 'relative' }}>
+            <motion.button 
+              className={`sos-button ${isAnalyzing ? 'loading' : ''}`}
+              style={{ width: '80px', height: '80px', background: 'var(--tab-active)', boxShadow: 'none' }}
+              onClick={() => document.getElementById('ai-camera-input')?.click()}
+              disabled={isAnalyzing}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.9 }}
+            >
+              <Camera size={24} />
+              <span style={{ fontSize: '0.5rem', marginTop: 4 }}>{isAnalyzing ? 'ANALYZE...' : 'AI VISION'}</span>
+            </motion.button>
+            <input 
+              id="ai-camera-input"
+              type="file" 
+              accept="image/*" 
+              capture="environment"
+              style={{ display: 'none' }}
+              onChange={handleFileUpload}
+            />
+          </div>
         </div>
+
+        {aiAnalysis && (
+          <motion.div 
+            className="first-aid-card"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            style={{ borderLeftColor: '#007aff', marginBottom: '2rem' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ color: '#007aff', margin: 0, fontSize: '1rem' }}>AI Scene Analysis</h3>
+              <button className="theme-toggle" onClick={() => setAiAnalysis(null)}><X size={16} /></button>
+            </div>
+            <div className="ai-report-content" style={{ fontSize: '0.85rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+              {aiAnalysis}
+            </div>
+          </motion.div>
+        )}
 
         {contacts.length > 0 && (
           <button 
