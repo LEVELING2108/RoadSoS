@@ -761,9 +761,41 @@ function App() {
             </div>
             <div className="settings-scroll-area">
               <section className="settings-section">
-                <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>Language / Idioma</h3>
-                <select className="contact-input" value={i18n.language} onChange={(e) => i18n.changeLanguage(e.target.value)}>
-                  <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option><option value="hi">हिन्दी</option>
+                <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>Language / भाषा</h3>
+                <select 
+                  className="contact-input"
+                  value={i18n.language}
+                  onChange={(e) => i18n.changeLanguage(e.target.value)}
+                >
+                  <optgroup label="Global Languages">
+                    <option value="en">English</option>
+                    <option value="es">Español</option>
+                    <option value="fr">Français</option>
+                  </optgroup>
+                  <optgroup label="Indian Scheduled Languages">
+                    <option value="hi">हिन्दी (Hindi)</option>
+                    <option value="as">অসমীয়া (Assamese)</option>
+                    <option value="bn">বাংলা (Bengali)</option>
+                    <option value="brx">बर' (Bodo)</option>
+                    <option value="doi">डोगरी (Dogri)</option>
+                    <option value="gu">ગુજરાતી (Gujarati)</option>
+                    <option value="kn">ಕನ್ನಡ (Kannada)</option>
+                    <option value="ks">کٲشُر (Kashmiri)</option>
+                    <option value="kok">कोंकणी (Konkani)</option>
+                    <option value="mai">मैथिली (Maithili)</option>
+                    <option value="ml">മലയാളം (Malayalam)</option>
+                    <option value="mni">মৈতৈলোন (Manipuri)</option>
+                    <option value="mr">मराठी (Marathi)</option>
+                    <option value="ne">नेपाली (Nepali)</option>
+                    <option value="or">ଓଡ଼ିଆ (Odia)</option>
+                    <option value="pa">ਪੰਜਾਬੀ (Punjabi)</option>
+                    <option value="sa">संस्कृतम् (Sanskrit)</option>
+                    <option value="sat">संताली (Santali)</option>
+                    <option value="sd">सिंधी (Sindhi)</option>
+                    <option value="ta">தமிழ் (Tamil)</option>
+                    <option value="te">తెలుగు (Telugu)</option>
+                    <option value="ur">اردو (Urdu)</option>
+                  </optgroup>
                 </select>
               </section>
               <section className="settings-section" style={{ marginTop: '1.5rem' }}>
