@@ -8,8 +8,6 @@ import {
   Stethoscope, 
   Wrench, 
   AlertTriangle, 
-  Moon, 
-  Sun, 
   Heart,
   List,
   Map as MapIcon, 
@@ -30,6 +28,7 @@ import './App.css';
 // Lazy load heavy Map component
 const MapComponent = lazy(() => import('./components/MapComponent'));
 import ServiceCard from './components/ServiceCard';
+import ThemeToggle from './components/ThemeToggle';
 
 interface Service {
   id: number;
@@ -58,7 +57,6 @@ function App() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState('hospital');
-  const [isDarkMode, setIsDarkMode] = useState(true);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
@@ -251,11 +249,10 @@ function App() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    const cached = ['roadsos_cache', 'roadsos_theme', 'roadsos_contacts', 'roadsos_profile'].map(k => localStorage.getItem(k));
+    const cached = ['roadsos_cache', 'roadsos_contacts', 'roadsos_profile'].map(k => localStorage.getItem(k));
     if (cached[0]) setServices(JSON.parse(cached[0]));
-    if (cached[1] === 'light') setIsDarkMode(false);
-    if (cached[2]) setContacts(JSON.parse(cached[2]));
-    if (cached[3]) setProfile(JSON.parse(cached[3]));
+    if (cached[1]) setContacts(JSON.parse(cached[1]));
+    if (cached[2]) setProfile(JSON.parse(cached[2]));
 
     fetchLocation();
     const trackId = new URLSearchParams(window.location.search).get('track');
@@ -268,11 +265,6 @@ function App() {
       if (ws.current) ws.current.close();
     };
   }, [i18n.language, t, triageStep, isListening, fetchLocation, joinTrackingSession, proceedTriage, startVoiceTriage, triggerHaptic]);
-
-  useEffect(() => {
-    document.body.className = isDarkMode ? '' : 'light-mode';
-    localStorage.setItem('roadsos_theme', isDarkMode ? 'dark' : 'light');
-  }, [isDarkMode]);
 
   // --- Memoized Data ---
 
@@ -401,7 +393,7 @@ function App() {
   };
 
   return (
-    <div className={`app-container ${isDarkMode ? '' : 'light-mode'}`}>
+    <div className="app-container">
       {isOffline && <div className="offline-notice">{t('offline_notice')}</div>}
       <AnimatePresence>
         {isListening && (
@@ -423,7 +415,7 @@ function App() {
           )}
           <button className="theme-toggle" onClick={toggleVitalsMonitoring} style={{ color: isMonitoringVitals ? 'var(--primary-red)' : 'inherit' }}><Activity size={20} /></button>
           <button className="theme-toggle" onClick={() => setShowSettings(true)}><User size={20} /></button>
-          <button className="theme-toggle" onClick={() => setIsDarkMode(!isDarkMode)}>{isDarkMode ? <Sun size={20} /> : <Moon size={20} />}</button>
+          <ThemeToggle />
         </div>
       </header>
 

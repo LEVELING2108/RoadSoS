@@ -35,7 +35,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
   background-color: var(--bg-app);
   color: var(--text-main);
-  transition: background-color 0.3s, color 0.3s;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .app-container {
@@ -44,7 +44,6 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  transition: max-width 0.3s ease;
 }
 
 /* RESPONSIVE: DESKTOP */
@@ -559,6 +558,7 @@ select.contact-input option {
   flex: 1;
   height: 60px;
   display: flex;
+
   align-items: flex-end;
   gap: 4px;
 }
