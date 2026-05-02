@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Phone, 
@@ -15,7 +16,7 @@ import {
   Clock, 
   Heart,
   List,
-  MapIcon, 
+  Map as MapIcon, 
   X, 
   MessageSquare, 
   User,
@@ -25,10 +26,13 @@ import {
   Shield,
   Activity,
   Zap
-  } from 'lucide-react';import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
+} from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { FIRST_AID_DATA } from './data/firstAid';
+import { getEmergencyConfig } from './data/emergencyNumbers';
+import type { EmergencyConfig } from './data/emergencyNumbers';
 import './App.css';
 
 // Leaflet Icon Fix
@@ -79,6 +83,7 @@ function ChangeView({ center }: { center: [number, number] }) {
 }
 
 function App() {
+  const { t, i18n } = useTranslation();
   const [location, setLocation] = useState<{ lat: number, lon: number } | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
@@ -101,6 +106,8 @@ function App() {
   const [vitalsHistory, setVitalsHistory] = useState<number[]>([]);
   const [triageStep, setTriageStep] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [countryCode, setCountryCode] = useState<string>('DEFAULT');
+  const [emergencyConfig, setEmergencyConfig] = useState<EmergencyConfig>(getEmergencyConfig('DEFAULT'));
   const [profile, setProfile] = useState({
     name: '',
     bloodGroup: '',
@@ -120,6 +127,8 @@ function App() {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
+      recognition.lang = i18n.language;
+      
       recognition.onresult = (event: any) => {
         const transcript = Array.from(event.results)
           .map((result: any) => result[0])
@@ -127,13 +136,12 @@ function App() {
           .join('')
           .toLowerCase();
 
-        if (transcript.includes('help help help') && triageStep === 0) {
+        const trigger = t('sos').toLowerCase();
+        if (transcript.includes(trigger) && triageStep === 0) {
           triggerHaptic([500, 200, 500]);
           startVoiceTriage();
         } else if (isListening && triageStep > 0) {
-          // In a real app, we'd send the transcript to an LLM here
-          // For now, we'll simulate a structured triage flow
-          if (transcript.length > 10) {
+          if (transcript.length > 5) {
             proceedTriage();
           }
         }
@@ -177,12 +185,24 @@ function App() {
       window.removeEventListener('offline', handleOffline);
       if (ws.current) ws.current.close();
     };
-  }, []);
+  }, [i18n.language]);
+
+  const fetchRegionInfo = async (lat: number, lon: number) => {
+    try {
+      const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      const code = res.data.address.country_code.toUpperCase();
+      setCountryCode(code);
+      setEmergencyConfig(getEmergencyConfig(code));
+    } catch (e) {
+      console.error("Region detection error:", e);
+    }
+  };
 
   const speak = (text: string) => {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = i18n.language;
     utterance.rate = 0.9;
     utterance.pitch = 1;
     utterance.onstart = () => setIsSpeaking(true);
@@ -193,19 +213,19 @@ function App() {
   const startVoiceTriage = () => {
     setTriageStep(1);
     getEmergencyServices();
-    speak("ROADSoS Emergency Agent active. I have alerted nearby responders. Are you conscious and able to speak?");
+    speak(t('voice_sos_active'));
   };
 
   const proceedTriage = () => {
     if (triageStep === 1) {
       setTriageStep(2);
-      speak("Understood. Are you currently alone, or is someone there with you?");
+      speak(t('voice_step_1', { defaultValue: "Are you conscious and able to speak?" }));
     } else if (triageStep === 2) {
       setTriageStep(3);
-      speak("I am building your medical report. Is there any heavy bleeding or difficulty breathing?");
+      speak(t('voice_step_2', { defaultValue: "Are you currently alone, or is someone there with you?" }));
     } else if (triageStep === 3) {
       setTriageStep(4);
-      speak("Responders are on their way. Stay calm and stay on the line. I am tracking your location live.");
+      speak(t('voice_step_3', { defaultValue: "Responders are on their way. Stay calm." }));
       setTimeout(() => setTriageStep(0), 10000);
     }
   };
@@ -217,6 +237,7 @@ function App() {
       setIsListening(false);
       setTriageStep(0);
     } else {
+      if (recognitionRef.current) recognitionRef.current.lang = i18n.language;
       recognitionRef.current?.start();
       setIsListening(true);
     }
@@ -265,12 +286,10 @@ function App() {
           samples.push(avgGreen);
           if (samples.length > 150) samples.shift();
 
-          // Calculate BPM every 2 seconds
           const now = Date.now();
           if (now - lastTime > 2000 && samples.length > 60) {
-            // Simple peak counting on the green channel variance
             let peaks = 0;
-            const threshold = 0.2; // Sensitivity
+            const threshold = 0.2;
             const mean = samples.reduce((a, b) => a + b) / samples.length;
             
             for (let i = 1; i < samples.length - 1; i++) {
@@ -279,7 +298,7 @@ function App() {
               }
             }
             
-            const bpm = Math.round((peaks * 60) / (samples.length / 30)); // Assuming 30fps
+            const bpm = Math.round((peaks * 60) / (samples.length / 30));
             if (bpm > 40 && bpm < 180) {
               setHeartRate(bpm);
               setVitalsHistory(prev => [...prev.slice(-20), bpm]);
@@ -297,7 +316,7 @@ function App() {
       requestAnimationFrame(processFrame);
     } catch (err) {
       console.error("Vitals Error:", err);
-      setError("CAMERA BLOCKED: Vitals monitoring requires front camera access.");
+      setError(t('camera_blocked', { defaultValue: "CAMERA BLOCKED: Vitals monitoring requires front camera access." }));
     }
   };
 
@@ -314,14 +333,14 @@ function App() {
     formData.append('image', file);
 
     try {
-      const res = await axios.post('/api/triage', formData, {
+      const res = await axios.post(`/api/triage?language=${i18n.language}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       setAiAnalysis(res.data.analysis);
       triggerHaptic(200);
     } catch (err: any) {
       console.error("AI Triage Error:", err);
-      setError(err.response?.data?.detail || "AI Vision analysis failed. Ensure API key is configured.");
+      setError(err.response?.data?.detail || t('ai_vision_failed', { defaultValue: "AI Vision analysis failed. Ensure API key is configured." }));
     } finally {
       setIsAnalyzing(false);
     }
@@ -349,7 +368,7 @@ function App() {
       if (data.lat && data.lon) {
         setLocation({ lat: data.lat, lon: data.lon });
         setViewMode('map');
-        setError("LIVE TRACKING ACTIVE: You are watching a shared location.");
+        setError(t('tracking_active'));
       }
     };
     
@@ -373,7 +392,6 @@ function App() {
       
       ws.current = socket;
 
-      // Start watching position and streaming
       if ("geolocation" in navigator) {
         navigator.geolocation.watchPosition((pos) => {
           if (socket.readyState === WebSocket.OPEN) {
@@ -411,7 +429,9 @@ function App() {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           if (isMounted.current) {
-            setLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            setLocation(newLoc);
+            fetchRegionInfo(newLoc.lat, newLoc.lon);
             setError(null);
           }
         },
@@ -419,9 +439,9 @@ function App() {
           console.error("Location Error:", err);
           if (isMounted.current) {
             if (err.code === err.PERMISSION_DENIED) {
-              setError("LOCATION BLOCKED: Please enable GPS in your browser settings to find emergency services.");
+              setError(t('location_blocked'));
             } else if (err.code === err.POSITION_UNAVAILABLE) {
-              setError("GPS SIGNAL LOST: Try moving to an open area.");
+              setError(t('gps_lost'));
             } else {
               setError("Location access required for SOS functions.");
             }
@@ -440,10 +460,7 @@ function App() {
     
     const performFetch = async (lat: number, lon: number) => {
       try {
-        // Start live tracking session
         startTracking(lat, lon);
-        
-        // Phase 3: Smart Routing - Pass AI context if available
         const contextParam = aiAnalysis ? `&context=${encodeURIComponent(aiAnalysis)}` : "";
         const res = await axios.get(`/api/emergency-services?lat=${lat}&lon=${lon}&radius=5000${contextParam}`);
         
@@ -453,7 +470,7 @@ function App() {
         }
       } catch {
         if (isMounted.current) {
-          setError(isOffline ? "You are offline. Showing cached data." : "Failed to sync with emergency network.");
+          setError(isOffline ? t('offline_notice') : "Failed to sync with emergency network.");
         }
       } finally {
         if (isMounted.current) setLoading(false);
@@ -465,7 +482,10 @@ function App() {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            if (isMounted.current) setLocation(newLoc);
+            if (isMounted.current) {
+              setLocation(newLoc);
+              fetchRegionInfo(newLoc.lat, newLoc.lon);
+            }
             performFetch(newLoc.lat, newLoc.lon);
           },
           (err) => {
@@ -490,7 +510,6 @@ function App() {
 
   const filteredServices = services.filter(s => {
     if (!s.category) return false;
-    
     if (activeCategory === 'hospital') {
       return ['hospital', 'clinic', 'doctors', 'pharmacy', 'ambulance_station', 'healthcare'].includes(s.category);
     }
@@ -498,18 +517,7 @@ function App() {
       return ['police', 'fire_station', 'emergency_phone'].includes(s.category);
     }
     if (activeCategory === 'rescue') {
-      return [
-        'car_repair', 
-        'motorcycle_repair', 
-        'tyres', 
-        'fuel', 
-        'tow_truck', 
-        'mechanic', 
-        'breakdown_service',
-        'bicycle_repair_station',
-        'car',
-        'motorcycle'
-      ].includes(s.category);
+      return ['car_repair', 'motorcycle_repair', 'tyres', 'fuel', 'tow_truck', 'mechanic', 'breakdown_service', 'bicycle_repair_station', 'car', 'motorcycle'].includes(s.category);
     }
     return s.category === activeCategory || s.category.includes(activeCategory);
   });
@@ -525,25 +533,16 @@ function App() {
       setShowSettings(true);
       return;
     }
-    
     const locStr = location ? `https://www.google.com/maps?q=${location.lat},${location.lon}` : "Unknown Location";
     const trackingLink = trackingSessionId ? `${window.location.origin}/?track=${trackingSessionId}` : "";
-    const message = encodeURIComponent(`EMERGENCY SOS: I need help! My current location is: ${locStr}. Track me live: ${trackingLink}`);
-    
-    // Web browsers generally restrict opening multiple links at once.
-    // We'll join contacts with a semicolon for some mobile OS support, 
-    // but primarily target the first contact while notifying the user.
+    const message = encodeURIComponent(`EMERGENCY SOS: I need help! Location: ${locStr}. Track me live: ${trackingLink}`);
     const phoneList = contacts.join(';');
     window.open(`sms:${phoneList}?body=${message}`);
-    
-    if (contacts.length > 1) {
-      console.log("Alerting multiple contacts:", contacts);
-    }
   };
 
   return (
     <div className={`app-container ${isDarkMode ? '' : 'light-mode'}`}>
-      {isOffline && <div className="offline-notice">WORKING OFFLINE • CACHED DATA ONLY</div>}
+      {isOffline && <div className="offline-notice">{t('offline_notice')}</div>}
       <AnimatePresence>
         {isListening && (
           <motion.div 
@@ -553,33 +552,26 @@ function App() {
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
           >
-            VOICE SOS ACTIVE: Say "Help Help Help"
+            {t('voice_sos_active')}
           </motion.div>
         )}
       </AnimatePresence>
       
       <header>
         <div className="header-titles">
-          <h1>ROADSoS</h1>
+          <h1>ROADSoS <span style={{ fontSize: '0.6rem', background: 'var(--primary-red)', padding: '2px 6px', borderRadius: '4px' }}>{countryCode}</span></h1>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           {isSupported && (
             <button 
               className="theme-toggle" 
               onClick={toggleListening} 
-              style={{ 
-                color: isListening ? 'var(--primary-red)' : 'inherit',
-                animation: isSpeaking ? 'pulse 1s infinite' : 'none'
-              }}
+              style={{ color: isListening ? 'var(--primary-red)' : 'inherit', animation: isSpeaking ? 'pulse 1s infinite' : 'none' }}
             >
               {isListening ? <Mic size={20} /> : <MicOff size={20} />}
             </button>
           )}
-          <button 
-            className="theme-toggle" 
-            onClick={toggleVitalsMonitoring} 
-            style={{ color: isMonitoringVitals ? 'var(--primary-red)' : 'inherit' }}
-          >
+          <button className="theme-toggle" onClick={toggleVitalsMonitoring} style={{ color: isMonitoringVitals ? 'var(--primary-red)' : 'inherit' }}>
             <Activity size={20} />
           </button>
           <button className="theme-toggle" onClick={() => setShowSettings(true)}>
@@ -593,45 +585,26 @@ function App() {
 
       <main className="main-content">
         {error && (
-          <div className="error-banner" style={{ flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
-              <AlertTriangle size={18} />
-              <span>{error}</span>
-            </div>
-            {error.includes("LOCATION") && (
-              <button 
-                className="btn btn-nav" 
-                style={{ width: '100%', fontSize: '0.75rem', padding: '6px' }}
-                onClick={fetchLocation}
-              >
-                RE-TRY LOCATION ACCESS
-              </button>
-            )}
+          <div className="error-banner">
+            <AlertTriangle size={18} />
+            <span>{error}</span>
           </div>
         )}
 
         <div className="sos-section">
           <div className="sos-button-wrapper">
             {!loading && (
-              <motion.div 
-                className="sos-ripple"
-                initial={{ scale: 1, opacity: 0.8 }}
-                animate={{ scale: 1.8, opacity: 0 }}
-                transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }}
-              />
+              <motion.div className="sos-ripple" initial={{ scale: 1, opacity: 0.8 }} animate={{ scale: 1.8, opacity: 0 }} transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }} />
             )}
             <motion.button 
               className={`sos-button ${loading ? 'loading' : ''}`} 
-              onClick={() => {
-                triggerHaptic([100, 50, 100]);
-                getEmergencyServices();
-              }} 
+              onClick={() => { triggerHaptic([100, 50, 100]); getEmergencyServices(); }} 
               disabled={loading}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.9 }}
             >
               <AlertTriangle size={32} fill="white" />
-              <span style={{ fontSize: '0.7rem', marginTop: 4 }}>{loading ? 'SYNCING...' : 'S O S'}</span>
+              <span style={{ fontSize: '0.7rem', marginTop: 4 }}>{loading ? t('syncing') : t('sos')}</span>
             </motion.button>
           </div>
 
@@ -645,56 +618,47 @@ function App() {
               whileTap={{ scale: 0.9 }}
             >
               <Camera size={24} />
-              <span style={{ fontSize: '0.5rem', marginTop: 4 }}>{isAnalyzing ? 'ANALYZE...' : 'AI VISION'}</span>
+              <span style={{ fontSize: '0.5rem', marginTop: 4 }}>{isAnalyzing ? t('analyzing') : t('ai_vision')}</span>
             </motion.button>
-            <input 
-              id="ai-camera-input"
-              type="file" 
-              accept="image/*" 
-              capture="environment"
-              style={{ display: 'none' }}
-              onChange={handleFileUpload}
-            />
+            <input id="ai-camera-input" type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileUpload} />
           </div>
         </div>
 
+        <button 
+          className="btn btn-call" 
+          style={{ width: '100%', marginBottom: '1rem', borderRadius: '14px', padding: '15px', fontSize: '1rem' }}
+          onClick={() => window.open(`tel:${emergencyConfig.combined || emergencyConfig.police}`)}
+        >
+          <Phone size={20} /> CALL LOCAL AUTHORITIES ({emergencyConfig.combined || emergencyConfig.police})
+        </button>
+
+        {contacts.length > 0 && (
+          <button className="btn btn-nav" style={{ width: '100%', marginBottom: '1.5rem', borderRadius: '14px', padding: '12px' }} onClick={sendAlerts}>
+            <MessageSquare size={18} /> {t('alert_contacts')}
+          </button>
+        )}
+
         {aiAnalysis && (
-          <motion.div 
-            className="first-aid-card"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            style={{ borderLeftColor: '#007aff', marginBottom: '1rem' }}
-          >
+          <motion.div className="first-aid-card" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} style={{ borderLeftColor: '#007aff', marginBottom: '1rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ color: '#007aff', margin: 0, fontSize: '1rem' }}>AI Scene Analysis</h3>
+              <h3 style={{ color: '#007aff', margin: 0, fontSize: '1rem' }}>{t('scene_analysis')}</h3>
               <button className="theme-toggle" onClick={() => setAiAnalysis(null)}><X size={16} /></button>
             </div>
-            <div className="ai-report-content" style={{ fontSize: '0.85rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-              {aiAnalysis}
-            </div>
+            <div className="ai-report-content" style={{ fontSize: '0.85rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{aiAnalysis}</div>
           </motion.div>
         )}
 
         {isMonitoringVitals && (
-          <motion.div 
-            className="first-aid-card vitals-card"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            style={{ borderLeftColor: '#ff3b30' }}
-          >
+          <motion.div className="first-aid-card vitals-card" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} style={{ borderLeftColor: '#ff3b30', marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <h3 style={{ color: '#ff3b30', margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Activity size={18} /> AI VITALS MONITOR
+                <Activity size={18} /> {t('vitals_monitor')}
               </h3>
-              <div className="vitals-live-tag">LIVE rPPG</div>
+              <div className="vitals-live-tag">{t('live_rppg')}</div>
             </div>
-            
             <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', padding: '10px 0' }}>
               <div className="hr-display">
-                <motion.div 
-                  animate={{ scale: [1, 1.2, 1] }} 
-                  transition={{ repeat: Infinity, duration: 0.8 }}
-                >
+                <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 0.8 }}>
                   <Heart size={32} fill="#ff3b30" color="#ff3b30" />
                 </motion.div>
                 <div style={{ textAlign: 'center' }}>
@@ -702,76 +666,43 @@ function App() {
                   <span className="bpm-label">BPM</span>
                 </div>
               </div>
-              
               <div className="vitals-graph">
                 {vitalsHistory.map((h, i) => (
-                  <motion.div 
-                    key={i}
-                    className="graph-bar"
-                    initial={{ height: 0 }}
-                    animate={{ height: `${(h / 150) * 100}%` }}
-                    style={{ background: h > 100 ? '#ff3b30' : '#34c759' }}
-                  />
+                  <motion.div key={i} className="graph-bar" initial={{ height: 0 }} animate={{ height: `${(h / 150) * 100}%` }} style={{ background: h > 100 ? '#ff3b30' : '#34c759' }} />
                 ))}
               </div>
             </div>
             <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '1rem' }}>
-              <Zap size={10} /> Extracting physiological data via micro-color facial analysis. Keep face visible in camera.
+              <Zap size={10} /> {t('vitals_detail', { defaultValue: 'Extracting physiological data via micro-color facial analysis. Keep face visible.' })}
             </p>
           </motion.div>
         )}
 
-        {contacts.length > 0 && (
-          <button 
-            className="btn btn-call" 
-            style={{ width: '100%', marginBottom: '1.5rem', borderRadius: '14px', padding: '12px' }}
-            onClick={sendAlerts}
-          >
-            <MessageSquare size={18} /> ALERT EMERGENCY CONTACTS
-          </button>
-        )}
-
         <div className="category-bar">
           {CATEGORIES.map((cat, idx) => (
-            <motion.div 
-              key={cat.id} 
-              className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} 
-              onClick={() => {
-                triggerHaptic(10);
-                setActiveCategory(cat.id);
-              }}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.1 }}
-            >
+            <motion.div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => { triggerHaptic(10); setActiveCategory(cat.id); }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
               <cat.icon size={18} />
-              {cat.label}
+              {t(cat.id === 'rescue' ? 'repairs' : cat.id === 'hospital' ? 'medical' : cat.id === 'police' ? 'security' : 'first_aid')}
             </motion.div>
           ))}
         </div>
 
         {activeCategory !== 'firstaid' && (
           <div className="view-toggle">
-            <button className={`toggle-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')}>
-              <List size={16} /> List
-            </button>
-            <button className={`toggle-btn ${viewMode === 'map' ? 'active' : ''}`} onClick={() => setViewMode('map')}>
-              <MapIcon size={16} /> Map
-            </button>
+            <button className={`toggle-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')}><List size={16} /> {t('list', { defaultValue: 'List' })}</button>
+            <button className={`toggle-btn ${viewMode === 'map' ? 'active' : ''}`} onClick={() => setViewMode('map')}><MapIcon size={16} /> {t('map', { defaultValue: 'Map' })}</button>
           </div>
         )}
 
         <div className="content-area">
           {activeCategory === 'firstaid' ? (
             <div className="first-aid-list">
-              <h2 style={{ marginBottom: '1rem' }}>Emergency First Aid</h2>
+              <h2 style={{ marginBottom: '1rem' }}>{t('first_aid_title')}</h2>
               {FIRST_AID_DATA.map((item, idx) => (
                 <div key={idx} className="first-aid-card">
                   <h4>{item.title}</h4>
                   <p style={{ fontSize: '0.8rem', opacity: 0.8 }}>{item.scenario}</p>
-                  <ol className="first-aid-steps">
-                    {item.steps.map((step, sIdx) => <li key={sIdx}>{step}</li>)}
-                  </ol>
+                  <ol className="first-aid-steps">{item.steps.map((step, sIdx) => <li key={sIdx}>{step}</li>)}</ol>
                 </div>
               ))}
             </div>
@@ -780,115 +711,39 @@ function App() {
               <div className={`service-list-section ${viewMode === 'map' ? 'mobile-hidden' : ''}`}>
                 <AnimatePresence mode="popLayout">
                   {filteredServices.length > 0 ? filteredServices.map((service, idx) => (
-                    <motion.div 
-                      key={service.id} 
-                      className={`service-card ${service.is_recommended ? 'recommended-card' : ''}`}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ delay: idx * 0.05 }}
-                      layout
-                    >
-                      {service.is_recommended && (
-                        <div className="recommended-badge">
-                          <Shield size={12} fill="white" /> AI RECOMMENDED FOR THIS EMERGENCY
-                        </div>
-                      )}
-                      <div 
-                        className="service-img" 
-                        style={service.image ? { backgroundImage: `url(${service.image})` } : {}}
-                      >
-                        {!service.image && <ImageIcon size={32} opacity={0.3} />}
-                      </div>
-                      
+                    <motion.div key={service.id} className={`service-card ${service.is_recommended ? 'recommended-card' : ''}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ delay: idx * 0.05 }} layout>
+                      {service.is_recommended && <div className="recommended-badge"><Shield size={12} fill="white" /> {t('recommended')}</div>}
+                      <div className="service-img" style={service.image ? { backgroundImage: `url(${service.image})` } : {}}>{!service.image && <ImageIcon size={32} opacity={0.3} />}</div>
                       <div className="service-details">
                         <h3>{service.name}</h3>
                         <table className="detail-table">
                           <tbody>
-                            <tr>
-                              <td className="label">Location</td>
-                              <td className="value"><MapPin size={12} /> {service.address || 'GPS Coordinate'}</td>
-                            </tr>
-                            {service.opening_hours && (
-                              <tr>
-                                <td className="label">Hours</td>
-                                <td className="value"><Clock size={12} /> {service.opening_hours}</td>
-                              </tr>
-                            )}
-                            {service.phone && (
-                              <tr>
-                                <td className="label">Contact</td>
-                                <td className="value"><Phone size={12} /> {service.phone}</td>
-                              </tr>
-                            )}
+                            <tr><td className="label">{t('location', { defaultValue: 'Location' })}</td><td className="value"><MapPin size={12} /> {service.address || 'GPS Coordinate'}</td></tr>
+                            {service.opening_hours && <tr><td className="label">{t('hours', { defaultValue: 'Hours' })}</td><td className="value"><Clock size={12} /> {service.opening_hours}</td></tr>}
+                            {service.phone && <tr><td className="label">{t('contact', { defaultValue: 'Contact' })}</td><td className="value"><Phone size={12} /> {service.phone}</td></tr>}
                           </tbody>
                         </table>
                       </div>
-
                       <div className="card-actions">
-                        <button className="btn btn-call" onClick={() => {
-                          triggerHaptic(20);
-                          service.phone && window.open(`tel:${service.phone}`);
-                        }}>
-                          <Phone size={16} /> CALL
-                        </button>
-                        <button 
-                          className={`btn ${selectedService?.id === service.id ? 'btn-call' : 'btn-nav'}`} 
-                          onClick={() => {
-                            triggerHaptic(50);
-                            setSelectedService(service);
-                            if (location) fetchRoute([location.lat, location.lon], [service.lat, service.lon]);
-                            setViewMode('map');
-                          }}
-                        >
-                          <Navigation size={16} /> {selectedService?.id === service.id ? 'ROUTING...' : 'NAVIGATE'}
-                        </button>
-                        <button className="btn btn-nav" onClick={() => {
-                          triggerHaptic(20);
-                          window.open(`https://www.google.com/maps/dir/?api=1&destination=${service.lat},${service.lon}`);
-                        }}>
-                          <ImageIcon size={16} /> EXTERNAL
-                        </button>
+                        <button className="btn btn-call" onClick={() => { triggerHaptic(20); service.phone && window.open(`tel:${service.phone}`); }}><Phone size={16} /> {t('call', { defaultValue: 'CALL' })}</button>
+                        <button className={`btn ${selectedService?.id === service.id ? 'btn-call' : 'btn-nav'}`} onClick={() => { triggerHaptic(50); setSelectedService(service); if (location) fetchRoute([location.lat, location.lon], [service.lat, service.lon]); setViewMode('map'); }}><Navigation size={16} /> {selectedService?.id === service.id ? t('syncing') : t('navigate')}</button>
+                        <button className="btn btn-nav" onClick={() => { triggerHaptic(20); window.open(`https://www.google.com/maps/dir/?api=1&destination=${service.lat},${service.lon}`); }}><ImageIcon size={16} /> {t('external_map')}</button>
                       </div>
                     </motion.div>
                   )) : (
-                    <motion.div 
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 0.5 }}
-                      style={{ textAlign: 'center', marginTop: '3rem' }}
-                    >
-                      <p>No active services in this category.</p>
-                      <p>Tap SOS to refresh nearby data.</p>
-                    </motion.div>
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.5 }} style={{ textAlign: 'center', marginTop: '3rem' }}><p>{t('nearby_services')}</p><p>{t('refresh_data')}</p></motion.div>
                   )}
                 </AnimatePresence>
               </div>
-
               {location && (
                 <div className={`map-section ${viewMode === 'list' ? 'mobile-hidden' : ''}`}>
-                  <div className="location-badge">
-                    <MapPin size={12} /> {location.lat.toFixed(5)}, {location.lon.toFixed(5)}
-                  </div>
+                  <div className="location-badge"><MapPin size={12} /> {location.lat.toFixed(5)}, {location.lon.toFixed(5)}</div>
                   <MapContainer center={[location.lat, location.lon]} zoom={14} scrollWheelZoom={false}>
                     <ChangeView center={[location.lat, location.lon]} />
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    <Marker position={[location.lat, location.lon]} icon={UserIcon}>
-                      <Popup>You are here</Popup>
-                    </Marker>
-                    {routeCoordinates.length > 0 && (
-                      <Polyline positions={routeCoordinates} color="var(--primary-red)" weight={5} opacity={0.7} />
-                    )}
-                    {filteredServices.map(s => (
-                      <Marker key={s.id} position={[s.lat, s.lon]}>
-                        <Popup>
-                          <strong>{s.name}</strong><br/>
-                          {s.category}
-                        </Popup>
-                      </Marker>
-                    ))}
+                    <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <Marker position={[location.lat, location.lon]} icon={UserIcon}><Popup>You are here</Popup></Marker>
+                    {routeCoordinates.length > 0 && <Polyline positions={routeCoordinates} color="var(--primary-red)" weight={5} opacity={0.7} />}
+                    {filteredServices.map(s => <Marker key={s.id} position={[s.lat, s.lon]}><Popup><strong>{s.name}</strong><br/>{s.category}</Popup></Marker>)}
                   </MapContainer>
                 </div>
               )}
@@ -901,74 +756,36 @@ function App() {
         <div className="settings-overlay">
           <div className="settings-modal">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2>User Profile</h2>
+              <h2>{t('settings')}</h2>
               <button className="theme-toggle" onClick={() => setShowSettings(false)}><X size={20} /></button>
             </div>
-            
             <div className="settings-scroll-area">
               <section className="settings-section">
-                <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>Personal Details</h3>
-                <input 
-                  type="text" 
-                  placeholder="Full Name"
-                  className="contact-input"
-                  value={profile.name}
-                  onChange={(e) => saveProfile({...profile, name: e.target.value})}
-                />
-                <select 
-                  className="contact-input"
-                  value={profile.bloodGroup}
-                  onChange={(e) => saveProfile({...profile, bloodGroup: e.target.value})}
-                >
-                  <option value="">Select Blood Group</option>
-                  {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
-                    <option key={bg} value={bg}>{bg}</option>
-                  ))}
+                <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>Language / Idioma</h3>
+                <select className="contact-input" value={i18n.language} onChange={(e) => i18n.changeLanguage(e.target.value)}>
+                  <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option><option value="hi">हिन्दी</option>
                 </select>
-                <textarea 
-                  placeholder="Medical Conditions / Allergies"
-                  className="contact-input"
-                  rows={3}
-                  value={profile.medicalNotes}
-                  onChange={(e) => saveProfile({...profile, medicalNotes: e.target.value})}
-                  style={{ resize: 'none' }}
-                />
               </section>
-
               <section className="settings-section" style={{ marginTop: '1.5rem' }}>
-                <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem', color: 'var(--primary-red)' }}>Emergency Contacts</h3>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-                  These numbers will be alerted during an SOS.
-                </p>
+                <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>{t('personal_details')}</h3>
+                <input type="text" placeholder={t('full_name')} className="contact-input" value={profile.name} onChange={(e) => saveProfile({...profile, name: e.target.value})} />
+                <select className="contact-input" value={profile.bloodGroup} onChange={(e) => saveProfile({...profile, bloodGroup: e.target.value})}>
+                  <option value="">{t('blood_group')}</option>{['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => <option key={bg} value={bg}>{bg}</option>)}
+                </select>
+                <textarea placeholder={t('medical_notes')} className="contact-input" rows={3} value={profile.medicalNotes} onChange={(e) => saveProfile({...profile, medicalNotes: e.target.value})} style={{ resize: 'none' }} />
+              </section>
+              <section className="settings-section" style={{ marginTop: '1.5rem' }}>
+                <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem', color: 'var(--primary-red)' }}>{t('contacts')}</h3>
                 {[0, 1, 2].map(idx => (
-                  <input 
-                    key={idx}
-                    type="tel" 
-                    placeholder={`Contact ${idx + 1}`}
-                    className="contact-input"
-                    value={contacts[idx] || ''}
-                    onChange={(e) => {
-                      const newC = [...contacts];
-                      newC[idx] = e.target.value;
-                      saveContacts(newC.filter(c => c !== ''));
-                    }}
-                  />
+                  <input key={idx} type="tel" placeholder={`Contact ${idx + 1}`} className="contact-input" value={contacts[idx] || ''} onChange={(e) => { const newC = [...contacts]; newC[idx] = e.target.value; saveContacts(newC.filter(c => c !== '')); }} />
                 ))}
               </section>
             </div>
-
-            <div className="modal-actions" style={{ marginTop: '1.5rem' }}>
-              <button className="btn btn-call" style={{ width: '100%' }} onClick={() => setShowSettings(false)}>
-                SAVE & CLOSE
-              </button>
-            </div>
+            <div className="modal-actions" style={{ marginTop: '1.5rem' }}><button className="btn btn-call" style={{ width: '100%' }} onClick={() => setShowSettings(false)}>{t('save_close')}</button></div>
           </div>
         </div>
       )}
-
-      <footer style={{ textAlign: 'center', padding: '2rem', fontSize: '0.7rem', opacity: 0.5 }}>
-        ROADSoS GLOBAL EMERGENCY NETWORK © 2026
-      </footer>
+      <footer style={{ textAlign: 'center', padding: '2rem', fontSize: '0.7rem', opacity: 0.5 }}>ROADSoS GLOBAL EMERGENCY NETWORK © 2026</footer>
     </div>
   );
 }

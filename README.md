@@ -11,8 +11,9 @@
 
 ## 🌟 Next-Level AI Features
 
-- **🧠 AI Vision Triage**: Snap a photo of an accident scene. Gemini 1.5 Pro instantly identifies hazards, assesses injury severity, and provides immediate first-aid instructions.
-- **💓 Camera-Based Vitals (rPPG)**: Hardware-free vital signs monitoring. Extracted via micro-facial color analysis (rPPG) to track heart rate and breathing in real-time.
+- **🌍 Global Localization (i18n)**: Full multi-language support (English, Spanish, French, Hindi). The app, Voice AI, and Vision AI all adapt to your selected language.
+- **🚨 Region-Specific SOS**: Automatically detects your country via GPS and provides direct-dial buttons for local authorities (e.g., 911, 112, 100/108).
+- **🧠 AI Vision Triage**: Snap a photo of an accident scene. Gemini 1.5 Pro instantly identifies hazards and provides instructions in your language.
 - **🎙️ Conversational Voice Dispatcher**: A hands-free, empathetic Voice AI that triages victims, provides calm guidance, and builds medical reports via natural conversation.
 - **🗺️ Predictive Smart Routing**: AI-powered dispatch that routes victims to the *best* specialized facility (Trauma, Burn Unit, etc.) based on real-time triage data.
 - **🛰️ Live SOS Tracking**: Secure WebSocket streams allowing emergency contacts to watch your GPS location move live on a shared dashboard.

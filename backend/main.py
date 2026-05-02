@@ -40,14 +40,14 @@ OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 HEADERS = {"User-Agent": "ROADSoS/1.0 (https://github.com/yourusername/roadsos)"}
 
 @app.post("/api/triage")
-async def ai_triage(image: UploadFile = File(...)):
+async def ai_triage(language: str = Query("en", description="Preferred response language"), image: UploadFile = File(...)):
     if not model:
         raise HTTPException(status_code=503, detail="AI Service is not configured. Please add GEMINI_API_KEY.")
     
     try:
         image_data = await image.read()
         
-        prompt = """
+        prompt = f"""
         ACT AS A SENIOR EMERGENCY ROOM TRIAGE OFFICER.
         Analyze this image from a road accident or emergency scene.
         1. IDENTIFY IMMEDIATE HAZARDS: (Fire, fuel leaks, unstable vehicles, traffic).
@@ -55,6 +55,7 @@ async def ai_triage(image: UploadFile = File(...)):
         3. PROVIDE STEP-BY-STEP FIRST AID: (Clear, actionable instructions for a bystander).
         4. SPECIFY THE TYPE OF FACILITY NEEDED: (Trauma Center, Burn Unit, General Hospital).
         
+        IMPORTANT: YOUR ENTIRE RESPONSE MUST BE IN {language.upper()}.
         KEEP YOUR RESPONSE CONCISE, ACTIONABLE, AND CALM. USE MARKDOWN FOR FORMATTING.
         """
         
