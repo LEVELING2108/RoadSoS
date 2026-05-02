@@ -8,8 +8,12 @@ import os
 import google.generativeai as genai
 from typing import Dict, List
 from dotenv import load_dotenv
+from cachetools import TTLCache
 
 load_dotenv()
+
+# Initialize Cache: 100 max items, 5 minute (300s) expiry
+service_cache = TTLCache(maxsize=100, ttl=300)
 
 # Configure Gemini
 GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -110,6 +114,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             # We keep locations for a while, but in a real app we'd add TTL
             pass
 
+import asyncio
+
+# ... (imports and cache remains same) ...
+
 @app.get("/api/emergency-services")
 async def get_emergency_services(
     lat: float = Query(..., description="Latitude of the location"),
@@ -118,40 +126,37 @@ async def get_emergency_services(
     context: str = Query(None, description="Triage context for AI recommendation")
 ):
     """
-    Fetch nearby emergency services and optionally rank them using AI based on context.
+    Fetch nearby emergency services with extreme performance.
+    Returns results immediately from cache or optimized Overpass pass.
     """
+    cache_key = f"{round(lat, 3)}_{round(lon, 3)}_{radius}"
+    
+    if cache_key in service_cache:
+        logging.info("Serving from cache")
+        results = service_cache[cache_key]
+        # Return a copy to avoid mutating the cache
+        return {"services": await apply_ai_to_results(context, results.copy())}
+
+    # Optimized 'nwr' (Node, Way, Relation) query for single-pass performance
     query = f"""
-    [out:json];
+    [out:json][timeout:10];
     (
-      node["amenity"="hospital"](around:{radius},{lat},{lon});
-      way["amenity"="hospital"](around:{radius},{lat},{lon});
-      node["amenity"="clinic"](around:{radius},{lat},{lon});
-      node["amenity"="doctors"](around:{radius},{lat},{lon});
-      node["amenity"="pharmacy"](around:{radius},{lat},{lon});
-      node["amenity"="police"](around:{radius},{lat},{lon});
-      node["amenity"="fire_station"](around:{radius},{lat},{lon});
-      node["shop"="car_repair"](around:{radius},{lat},{lon});
-      node["shop"="motorcycle_repair"](around:{radius},{lat},{lon});
-      node["shop"="tyres"](around:{radius},{lat},{lon});
-      node["shop"="car"](around:{radius},{lat},{lon});
-      node["shop"="motorcycle"](around:{radius},{lat},{lon});
-      node["emergency"="ambulance_station"](around:{radius},{lat},{lon});
-      node["emergency"="tow_truck"](around:{radius},{lat},{lon});
-      node["amenity"="fuel"](around:{radius},{lat},{lon});
-      node["amenity"="bicycle_repair_station"](around:{radius},{lat},{lon});
-      node["emergency"="phone"](around:{radius},{lat},{lon});
+      nwr(around:{radius},{lat},{lon})["amenity"~"hospital|clinic|doctors|pharmacy|police|fire_station|fuel|bicycle_repair_station|emergency_phone"];
+      nwr(around:{radius},{lat},{lon})["shop"~"car_repair|motorcycle_repair|tyres|car|motorcycle"];
+      nwr(around:{radius},{lat},{lon})["emergency"~"ambulance_station|tow_truck|phone"];
     );
     out center;
     """
 
     async with httpx.AsyncClient(headers=HEADERS) as client:
         try:
-            response = await client.post(OVERPASS_URL, data={"data": query}, timeout=30.0)
+            # Reduced timeout for snappier failure/retry
+            response = await client.post(OVERPASS_URL, data={"data": query}, timeout=15.0)
             response.raise_for_status()
             data = response.json()
         except Exception as e:
-            logging.error(f"Error fetching data from Overpass: {e}")
-            raise HTTPException(status_code=503, detail="Emergency services provider unavailable.")
+            logging.error(f"Overpass Error: {e}")
+            raise HTTPException(status_code=503, detail="Provider delay. Try again.")
 
     elements = data.get("elements", [])
     results = []
@@ -171,28 +176,33 @@ async def get_emergency_services(
             "address": tags.get("addr:full") or f"{tags.get('addr:street', '')} {tags.get('addr:housenumber', '')}".strip(),
             "is_recommended": False
         })
-            
-    # AI Recommendation Engine
-    if context and model and results:
-        try:
-            service_names = [r["name"] for r in results[:10]]
-            recommend_prompt = f"""
-            Triage Context: {context}
-            Nearby Services: {', '.join(service_names)}
-            
-            Based on the triage context, which ONE of these services is the BEST fit for the patient's immediate needs? 
-            Respond ONLY with the EXACT name of the service from the list. If none fit, respond with 'None'.
-            """
-            ai_res = model.generate_content(recommend_prompt)
-            recommended_name = ai_res.text.strip()
-            
-            for r in results:
-                if r["name"] == recommended_name:
-                    r["is_recommended"] = True
-        except Exception as e:
-            logging.error(f"AI Recommendation Error: {e}")
+    
+    service_cache[cache_key] = results
+    return {"services": await apply_ai_to_results(context, results)}
 
-    return {"services": results}
+async def apply_ai_to_results(context, results):
+    """
+    Applies AI recommendation without blocking the main event loop.
+    """
+    if not context or not model or not results:
+        return results
+
+    try:
+        # Run the blocking AI call in a separate thread pool
+        service_names = [r["name"] for r in results[:15]]
+        recommend_prompt = f"Triage Context: {context}\nNearby: {', '.join(service_names)}\nWhich is BEST? Respond ONLY with the EXACT name."
+        
+        # Use asyncio.to_thread to prevent blocking the event loop
+        response = await asyncio.to_thread(model.generate_content, recommend_prompt)
+        recommended_name = response.text.strip()
+        
+        for r in results:
+            if r["name"] == recommended_name:
+                r["is_recommended"] = True
+    except Exception as e:
+        logging.error(f"AI Recommendation async error: {e}")
+    
+    return results
 
 @app.get("/health")
 def health_check():

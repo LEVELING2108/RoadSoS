@@ -87,22 +87,138 @@ function App() {
   const ws = useRef<WebSocket | null>(null);
   const recognitionRef = useRef<any>(null);
 
-  // Performance: Memoize filtered services
-  const filteredServices = useMemo(() => {
-    return services.filter(s => {
-      if (!s.category) return false;
-      if (activeCategory === 'hospital') {
-        return ['hospital', 'clinic', 'doctors', 'pharmacy', 'ambulance_station', 'healthcare'].includes(s.category);
+  // --- Callbacks (Defined early to avoid hoisting issues) ---
+
+  const triggerHaptic = useCallback((pattern: number | number[] = 50) => {
+    if ('vibrate' in navigator) navigator.vibrate(pattern);
+  }, []);
+
+  const speak = useCallback((text: string) => {
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = i18n.language;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  }, [i18n.language]);
+
+  const fetchRegionInfo = useCallback(async (lat: number, lon: number) => {
+    try {
+      const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      const code = res.data.address.country_code.toUpperCase();
+      setCountryCode(code);
+      setEmergencyConfig(getEmergencyConfig(code));
+    } catch (e) { console.error("Region Info Error:", e); }
+  }, []);
+
+  const startTracking = useCallback(async (lat: number, lon: number) => {
+    try {
+      const res = await axios.post('/api/create-session');
+      const id = res.data.session_id;
+      setTrackingSessionId(id);
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
+      const socket = new WebSocket(`${protocol}//${host}/ws/track/${id}`);
+      socket.onopen = () => socket.send(JSON.stringify({ lat, lon }));
+      ws.current = socket;
+      if ("geolocation" in navigator) {
+        navigator.geolocation.watchPosition((pos) => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ lat: pos.coords.latitude, lon: pos.coords.longitude }));
+          }
+        });
       }
-      if (activeCategory === 'police') {
-        return ['police', 'fire_station', 'emergency_phone'].includes(s.category);
+    } catch (e) { console.error("Tracking Session Error:", e); }
+  }, []);
+
+  const getEmergencyServices = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    const fetchWithCoords = async (lat: number, lon: number) => {
+      try {
+        const contextParam = aiAnalysis ? `&context=${encodeURIComponent(aiAnalysis)}` : "";
+        const [servicesRes] = await Promise.all([
+          axios.get(`/api/emergency-services?lat=${lat}&lon=${lon}&radius=5000${contextParam}`),
+          fetchRegionInfo(lat, lon),
+          startTracking(lat, lon)
+        ]);
+        
+        if (isMounted.current) {
+          setServices(servicesRes.data.services);
+          localStorage.setItem('roadsos_cache', JSON.stringify(servicesRes.data.services));
+        }
+      } catch (err) {
+        console.error("Fetch Services Error:", err);
+        if (isMounted.current) setError(isOffline ? t('offline_notice') : "Failed to sync with emergency network.");
+      } finally {
+        if (isMounted.current) setLoading(false);
       }
-      if (activeCategory === 'rescue') {
-        return ['car_repair', 'motorcycle_repair', 'tyres', 'fuel', 'tow_truck', 'mechanic', 'breakdown_service', 'bicycle_repair_station', 'car', 'motorcycle'].includes(s.category);
+    };
+
+    if (!location) {
+      if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            if (isMounted.current) setLocation(newLoc);
+            fetchWithCoords(newLoc.lat, newLoc.lon);
+          },
+          () => { if (isMounted.current) { setError("Location required."); setLoading(false); } },
+          { enableHighAccuracy: true, timeout: 5000 }
+        );
       }
-      return s.category === activeCategory || s.category.includes(activeCategory);
-    });
-  }, [services, activeCategory]);
+    } else {
+      await fetchWithCoords(location.lat, location.lon);
+    }
+  }, [location, aiAnalysis, isOffline, t, fetchRegionInfo, startTracking]);
+
+  const startVoiceTriage = useCallback(() => {
+    setTriageStep(1);
+    getEmergencyServices();
+    speak(t('voice_sos_active'));
+  }, [getEmergencyServices, speak, t]);
+
+  const proceedTriage = useCallback(() => {
+    if (triageStep === 1) { setTriageStep(2); speak(t('voice_step_1')); }
+    else if (triageStep === 2) { setTriageStep(3); speak(t('voice_step_2')); }
+    else if (triageStep === 3) { setTriageStep(4); speak(t('voice_step_3')); setTimeout(() => setTriageStep(0), 10000); }
+  }, [triageStep, speak, t]);
+
+  const fetchLocation = useCallback(() => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (isMounted.current) {
+            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            setLocation(newLoc);
+            fetchRegionInfo(newLoc.lat, newLoc.lon);
+          }
+        },
+        (err) => { if (isMounted.current) setError(err.code === 1 ? t('location_blocked') : t('gps_lost')); },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
+      );
+    }
+  }, [fetchRegionInfo, t]);
+
+  const joinTrackingSession = useCallback((id: string) => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
+    const socket = new WebSocket(`${protocol}//${host}/ws/track/${id}`);
+    socket.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.lat && data.lon) {
+        setLocation({ lat: data.lat, lon: data.lon });
+        setViewMode('map');
+        setError(t('tracking_active'));
+      }
+    };
+    ws.current = socket;
+    setTrackingSessionId(id);
+  }, [t]);
+
+  // --- Effects ---
 
   useEffect(() => {
     isMounted.current = true;
@@ -151,42 +267,32 @@ function App() {
       window.removeEventListener('offline', handleOffline);
       if (ws.current) ws.current.close();
     };
-  }, [i18n.language]);
+  }, [i18n.language, t, triageStep, isListening, fetchLocation, joinTrackingSession, proceedTriage, startVoiceTriage, triggerHaptic]);
 
-  const fetchRegionInfo = useCallback(async (lat: number, lon: number) => {
-    try {
-      const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-      const code = res.data.address.country_code.toUpperCase();
-      setCountryCode(code);
-      setEmergencyConfig(getEmergencyConfig(code));
-    } catch (e) { console.error(e); }
-  }, []);
+  useEffect(() => {
+    document.body.className = isDarkMode ? '' : 'light-mode';
+    localStorage.setItem('roadsos_theme', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
 
-  const triggerHaptic = useCallback((pattern: number | number[] = 50) => {
-    if ('vibrate' in navigator) navigator.vibrate(pattern);
-  }, []);
+  // --- Memoized Data ---
 
-  const speak = useCallback((text: string) => {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = i18n.language;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-  }, [i18n.language]);
+  const filteredServices = useMemo(() => {
+    return services.filter(s => {
+      if (!s.category) return false;
+      if (activeCategory === 'hospital') {
+        return ['hospital', 'clinic', 'doctors', 'pharmacy', 'ambulance_station', 'healthcare'].includes(s.category);
+      }
+      if (activeCategory === 'police') {
+        return ['police', 'fire_station', 'emergency_phone'].includes(s.category);
+      }
+      if (activeCategory === 'rescue') {
+        return ['car_repair', 'motorcycle_repair', 'tyres', 'fuel', 'tow_truck', 'mechanic', 'breakdown_service', 'bicycle_repair_station', 'car', 'motorcycle'].includes(s.category);
+      }
+      return s.category === activeCategory || s.category.includes(activeCategory);
+    });
+  }, [services, activeCategory]);
 
-  const startVoiceTriage = useCallback(() => {
-    setTriageStep(1);
-    getEmergencyServices();
-    speak(t('voice_sos_active'));
-  }, [speak, t]);
-
-  const proceedTriage = useCallback(() => {
-    if (triageStep === 1) { setTriageStep(2); speak(t('voice_step_1')); }
-    else if (triageStep === 2) { setTriageStep(3); speak(t('voice_step_2')); }
-    else if (triageStep === 3) { setTriageStep(4); speak(t('voice_step_3')); setTimeout(() => setTriageStep(0), 10000); }
-  }, [triageStep, speak, t]);
+  // --- Handlers ---
 
   const toggleListening = useCallback(() => {
     triggerHaptic(50);
@@ -201,87 +307,8 @@ function App() {
     }
   }, [isListening, triggerHaptic, i18n.language]);
 
-  const startTracking = useCallback(async (lat: number, lon: number) => {
-    try {
-      const res = await axios.post('/api/create-session');
-      const id = res.data.session_id;
-      setTrackingSessionId(id);
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
-      const socket = new WebSocket(`${protocol}//${host}/ws/track/${id}`);
-      socket.onopen = () => socket.send(JSON.stringify({ lat, lon }));
-      ws.current = socket;
-      if ("geolocation" in navigator) {
-        navigator.geolocation.watchPosition((pos) => {
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ lat: pos.coords.latitude, lon: pos.coords.longitude }));
-          }
-        });
-      }
-    } catch (e) { console.error(e); }
-  }, []);
-
-  const getEmergencyServices = useCallback(async () => {
-    // Performance: Instant visual feedback
-    setLoading(true);
-    setError(null);
-    
-    const fetchWithCoords = async (lat: number, lon: number) => {
-      try {
-        // Performance: Parallelize non-dependent requests
-        const contextParam = aiAnalysis ? `&context=${encodeURIComponent(aiAnalysis)}` : "";
-        const [servicesRes] = await Promise.all([
-          axios.get(`/api/emergency-services?lat=${lat}&lon=${lon}&radius=5000${contextParam}`),
-          fetchRegionInfo(lat, lon),
-          startTracking(lat, lon)
-        ]);
-        
-        if (isMounted.current) {
-          setServices(servicesRes.data.services);
-          localStorage.setItem('roadsos_cache', JSON.stringify(servicesRes.data.services));
-        }
-      } catch {
-        if (isMounted.current) setError(isOffline ? t('offline_notice') : "Failed to sync with emergency network.");
-      } finally {
-        if (isMounted.current) setLoading(false);
-      }
-    };
-
-    if (!location) {
-      if ("geolocation" in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            if (isMounted.current) setLocation(newLoc);
-            fetchWithCoords(newLoc.lat, newLoc.lon);
-          },
-          () => { if (isMounted.current) { setError("Location required."); setLoading(false); } },
-          { enableHighAccuracy: true, timeout: 5000 }
-        );
-      }
-    } else {
-      await fetchWithCoords(location.lat, location.lon);
-    }
-  }, [location, aiAnalysis, isOffline, t, fetchRegionInfo, startTracking]);
-
-  const fetchLocation = useCallback(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (isMounted.current) {
-            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            setLocation(newLoc);
-            fetchRegionInfo(newLoc.lat, newLoc.lon);
-          }
-        },
-        (err) => { if (isMounted.current) setError(err.code === 1 ? t('location_blocked') : t('gps_lost')); },
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    }
-  }, [fetchRegionInfo, t]);
-
   const handleCall = useCallback((phone: string) => { triggerHaptic(20); window.open(`tel:${phone}`); }, [triggerHaptic]);
-  const handleExternalMap = useCallback((lat: number, lon: number) => { triggerHaptic(20); window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`); }, [triggerHaptic]);
+  const handleExternalMap = useCallback((lat: number, lon: number) => { triggerHaptic(20); window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},lon=${lon}`); }, [triggerHaptic]);
   
   const handleNavigate = useCallback(async (service: Service) => {
     triggerHaptic(50);
@@ -292,7 +319,7 @@ function App() {
         const coords = res.data.routes[0].geometry.coordinates.map((c: any) => [c[1], c[0]]);
         setRouteCoordinates(coords);
         setViewMode('map');
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error("Routing Error:", e); }
     }
   }, [location, triggerHaptic]);
 
@@ -308,24 +335,11 @@ function App() {
       const res = await axios.post(`/api/triage?language=${i18n.language}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setAiAnalysis(res.data.analysis);
       triggerHaptic(200);
-    } catch (err: any) { setError(t('ai_vision_failed')); } finally { setIsAnalyzing(false); }
+    } catch (err) { 
+      console.error("AI Triage Error:", err);
+      setError(t('ai_vision_failed')); 
+    } finally { setIsAnalyzing(false); }
   }, [i18n.language, triggerHaptic, t]);
-
-  const joinTrackingSession = useCallback((id: string) => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
-    const socket = new WebSocket(`${protocol}//${host}/ws/track/${id}`);
-    socket.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      if (data.lat && data.lon) {
-        setLocation({ lat: data.lat, lon: data.lon });
-        setViewMode('map');
-        setError(t('tracking_active'));
-      }
-    };
-    ws.current = socket;
-    setTrackingSessionId(id);
-  }, [t]);
 
   const toggleVitalsMonitoring = useCallback(async () => {
     if (isMonitoringVitals) {
@@ -343,7 +357,7 @@ function App() {
       video.play();
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      let samples: number[] = [];
+      const samples: number[] = [];
       let lastTime = Date.now();
       const processFrame = () => {
         if (!isMounted.current || !stream.active) return;
@@ -370,11 +384,15 @@ function App() {
         else stream.getTracks().forEach(t => t.stop());
       };
       requestAnimationFrame(processFrame);
-    } catch (err) { setError(t('camera_blocked')); }
+    } catch (err) { 
+      console.error("Vitals Monitor Error:", err);
+      setError(t('camera_blocked')); 
+    }
   }, [isMonitoringVitals, triggerHaptic, t]);
 
   const saveProfile = (p: any) => { setProfile(p); localStorage.setItem('roadsos_profile', JSON.stringify(p)); };
   const saveContacts = (c: string[]) => { setContacts(c); localStorage.setItem('roadsos_contacts', JSON.stringify(c)); };
+  
   const sendAlerts = () => {
     if (contacts.length === 0) { setShowSettings(true); return; }
     const loc = location ? `https://www.google.com/maps?q=${location.lat},${location.lon}` : "Unknown";
