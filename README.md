@@ -17,6 +17,10 @@
 - **🎙️ Conversational Voice Dispatcher**: A hands-free, empathetic Voice AI that triages victims, provides calm guidance, and builds medical reports via natural conversation.
 - **🗺️ Predictive Smart Routing**: AI-powered dispatch that routes victims to the *best* specialized facility (Trauma, Burn Unit, etc.) based on real-time triage data.
 - **🛰️ Live SOS Tracking**: Secure WebSocket streams allowing emergency contacts to watch your GPS location move live on a shared dashboard.
+- **⚡ Advanced Reliability**: 
+    - **Zero-Stale Geolocation**: Forced fresh GPS locks (zero caching) to ensure accuracy in fast-moving emergencies.
+    - **Smart Fallback**: Intelligent location retention that keeps you protected even if GPS signal is temporarily lost.
+    - **UI-Sync Precision**: Real-time map and UI synchronization with device hardware for seamless movement tracking.
 - **🎯 Precision Haptics**: Native-feel physical feedback for critical actions, ensuring clarity in high-stress situations.
 
 ---
