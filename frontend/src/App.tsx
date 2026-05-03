@@ -32,6 +32,10 @@ const MapComponent = lazy(() => import('./components/MapComponent'));
 import ServiceCard from './components/ServiceCard';
 import ThemeToggle from './components/ThemeToggle';
 
+// Configure Production API URL
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+axios.defaults.baseURL = API_URL;
+
 interface Service {
   id: number;
   name: string;
@@ -117,9 +121,9 @@ function App() {
       const res = await axios.post('/api/create-session');
       const id = res.data.session_id;
       setTrackingSessionId(id);
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
-      const socket = new WebSocket(`${protocol}//${host}/ws/track/${id}`);
+      const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
+      const wsHost = API_URL.replace(/^https?:\/\//, '');
+      const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/track/${id}`);
       socket.onopen = () => socket.send(JSON.stringify({ lat, lon }));
       ws.current = socket;
       if ("geolocation" in navigator) {
@@ -203,9 +207,9 @@ function App() {
   }, [fetchRegionInfo, t]);
 
   const joinTrackingSession = useCallback((id: string) => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
-    const socket = new WebSocket(`${protocol}//${host}/ws/track/${id}`);
+    const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
+    const wsHost = API_URL.replace(/^https?:\/\//, '');
+    const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/track/${id}`);
     socket.onmessage = (e) => {
       const data = JSON.parse(e.data);
       if (data.lat && data.lon) {

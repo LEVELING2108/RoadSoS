@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: roadsos-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -w 4 -k uvicorn.workers.UvicornWorker main:app
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PORT
+        value: 8000
