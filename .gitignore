@@ -1,4 +1,7 @@
 .venv/
+venv/
+backend/venv/
+frontend/venv/
 .idea/
 node_modules/
 dist/
