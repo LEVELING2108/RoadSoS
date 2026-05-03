@@ -430,7 +430,7 @@ function App() {
             </motion.button>
           </div>
           <div className="sos-button-wrapper">
-            <motion.button className={`sos-button ${isAnalyzing ? 'loading' : ''}`} style={{ width: '80px', height: '80px', background: 'var(--tab-active)', boxShadow: 'none' }} onClick={() => document.getElementById('ai-camera-input')?.click()} disabled={isAnalyzing} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
+            <motion.button className={`sos-button ${isAnalyzing ? 'loading' : ''}`} style={{ width: '80px', height: '80px', background: 'var(--tab-active)', color: 'var(--text-main)', border: '1px solid var(--card-border)', boxShadow: 'none' }} onClick={() => document.getElementById('ai-camera-input')?.click()} disabled={isAnalyzing} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
               <Camera size={24} /><span style={{ fontSize: '0.5rem', marginTop: 4 }}>{isAnalyzing ? t('analyzing') : t('ai_vision')}</span>
             </motion.button>
             <input id="ai-camera-input" type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileUpload} />
