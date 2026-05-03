@@ -33,8 +33,9 @@ import ServiceCard from './components/ServiceCard';
 import ThemeToggle from './components/ThemeToggle';
 
 // Configure Production API URL
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '');
 axios.defaults.baseURL = API_URL;
+axios.defaults.timeout = 15000; // 15s timeout for slow Render spin-ups
 
 interface Service {
   id: number;
@@ -143,19 +144,22 @@ function App() {
     const fetchWithCoords = async (lat: number, lon: number) => {
       try {
         const contextParam = aiAnalysis ? `&context=${encodeURIComponent(aiAnalysis)}` : "";
-        const [servicesRes] = await Promise.all([
-          axios.get(`/api/emergency-services?lat=${lat}&lon=${lon}&radius=5000${contextParam}`),
-          fetchRegionInfo(lat, lon),
-          startTracking(lat, lon)
-        ]);
+        
+        // Start background tasks without waiting for them to block the main UI
+        fetchRegionInfo(lat, lon);
+        startTracking(lat, lon);
+
+        // Primary task: Fetch services
+        const servicesRes = await axios.get(`/api/emergency-services?lat=${lat}&lon=${lon}&radius=5000${contextParam}`);
         
         if (isMounted.current) {
           setServices(servicesRes.data.services);
           localStorage.setItem('roadsos_cache', JSON.stringify(servicesRes.data.services));
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Fetch Services Error:", err);
-        if (isMounted.current) setError(isOffline ? t('offline_notice') : "Failed to sync with emergency network.");
+        const detail = err.response?.data?.detail || err.message || "Unknown Network Error";
+        if (isMounted.current) setError(`${t('offline_notice')} (${detail})`);
       } finally {
         if (isMounted.current) setLoading(false);
       }
