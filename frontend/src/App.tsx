@@ -216,8 +216,9 @@ function App() {
     setTrackingSessionId(id);
   }, [t]);
 
-  // --- Effects ---
+  const [triageHistory, setTriageHistory] = useState<{ id: string, date: string, analysis: string }[]>([]);
 
+  // ... (inside useEffect)
   useEffect(() => {
     isMounted.current = true;
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -249,10 +250,11 @@ function App() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    const cached = ['roadsos_cache', 'roadsos_contacts', 'roadsos_profile'].map(k => localStorage.getItem(k));
+    const cached = ['roadsos_cache', 'roadsos_contacts', 'roadsos_profile', 'roadsos_history'].map(k => localStorage.getItem(k));
     if (cached[0]) setServices(JSON.parse(cached[0]));
     if (cached[1]) setContacts(JSON.parse(cached[1]));
     if (cached[2]) setProfile(JSON.parse(cached[2]));
+    if (cached[3]) setTriageHistory(JSON.parse(cached[3] || '[]'));
 
     fetchLocation();
     const trackId = new URLSearchParams(window.location.search).get('track');
@@ -300,7 +302,7 @@ function App() {
   }, [isListening, triggerHaptic, i18n.language]);
 
   const handleCall = useCallback((phone: string) => { triggerHaptic(20); window.open(`tel:${phone}`); }, [triggerHaptic]);
-  const handleExternalMap = useCallback((lat: number, lon: number) => { triggerHaptic(20); window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},lon=${lon}`); }, [triggerHaptic]);
+  const handleExternalMap = useCallback((lat: number, lon: number) => { triggerHaptic(20); window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`); }, [triggerHaptic]);
   
   const handleNavigate = useCallback(async (service: Service) => {
     triggerHaptic(50);
@@ -325,13 +327,25 @@ function App() {
     formData.append('image', file);
     try {
       const res = await axios.post(`/api/triage?language=${i18n.language}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      setAiAnalysis(res.data.analysis);
+      const analysis = res.data.analysis;
+      setAiAnalysis(analysis);
+      
+      // Save to History
+      const newEntry = {
+        id: crypto.randomUUID(),
+        date: new Date().toLocaleString(),
+        analysis: analysis
+      };
+      const updatedHistory = [newEntry, ...triageHistory.slice(0, 9)];
+      setTriageHistory(updatedHistory);
+      localStorage.setItem('roadsos_history', JSON.stringify(updatedHistory));
+      
       triggerHaptic(200);
     } catch (err) { 
       console.error("AI Triage Error:", err);
       setError(t('ai_vision_failed')); 
     } finally { setIsAnalyzing(false); }
-  }, [i18n.language, triggerHaptic, t]);
+  }, [i18n.language, triggerHaptic, t, triageHistory]);
 
   const toggleVitalsMonitoring = useCallback(async () => {
     if (isMonitoringVitals) {
@@ -562,6 +576,20 @@ function App() {
                 </select>
                 <textarea placeholder={t('medical_notes')} className="contact-input" rows={3} value={profile.medicalNotes} onChange={(e) => saveProfile({...profile, medicalNotes: e.target.value})} style={{ resize: 'none' }} />
               </section>
+              {triageHistory.length > 0 && (
+                <section className="settings-section" style={{ marginTop: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>{t('triage_history')}</h3>
+                  {triageHistory.map(item => (
+                    <div key={item.id} className="history-item" onClick={() => { setAiAnalysis(item.analysis); setShowSettings(false); }}>
+                      <div className="history-date">{item.date}</div>
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.analysis.substring(0, 50)}...</div>
+                    </div>
+                  ))}
+                  <button className="copy-btn" onClick={() => { setTriageHistory([]); localStorage.removeItem('roadsos_history'); }} style={{ color: 'var(--primary-red)', marginTop: '8px' }}>
+                    {t('clear_history')}
+                  </button>
+                </section>
+              )}
               <section className="settings-section" style={{ marginTop: '1.5rem' }}>
                 <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem', color: 'var(--primary-red)' }}>{t('contacts')}</h3>
                 {[0, 1, 2].map(idx => (

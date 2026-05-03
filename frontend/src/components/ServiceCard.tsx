@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Phone, Navigation, MapPin, Clock, Shield, Image as ImageIcon } from 'lucide-react';
+import { Phone, Navigation, MapPin, Clock, Shield, Image as ImageIcon, Copy, Check, ExternalLink } from 'lucide-react';
 
 interface Service {
   id: number;
@@ -28,6 +28,15 @@ interface ServiceCardProps {
 const ServiceCard: React.FC<ServiceCardProps> = ({ 
   service, idx, t, selectedServiceId, onCall, onNavigate, onExternalMap 
 }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const text = `${service.name}\n${service.address || 'GPS: ' + service.lat + ',' + service.lon}\nTel: ${service.phone || 'N/A'}`;
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <motion.div 
       className={`service-card ${service.is_recommended ? 'recommended-card' : ''}`} 
@@ -46,7 +55,13 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
         {!service.image && <ImageIcon size={32} opacity={0.3} />}
       </div>
       <div className="service-details">
-        <h3>{service.name}</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <h3>{service.name}</h3>
+          <button className="copy-btn" onClick={handleCopy}>
+            {copied ? <Check size={14} color="#34c759" /> : <Copy size={14} />}
+            <span>{copied ? 'Copied' : 'Copy'}</span>
+          </button>
+        </div>
         <table className="detail-table">
           <tbody>
             <tr>
@@ -69,17 +84,19 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
         </table>
       </div>
       <div className="card-actions">
-        <button className="btn btn-call" onClick={() => service.phone && onCall(service.phone)}>
-          <Phone size={16} /> {t('call')}
-        </button>
-        <button 
-          className={`btn ${selectedServiceId === service.id ? 'btn-call' : 'btn-nav'}`} 
-          onClick={() => onNavigate(service)}
-        >
-          <Navigation size={16} /> {selectedServiceId === service.id ? t('syncing') : t('navigate')}
-        </button>
-        <button className="btn btn-nav" onClick={() => onExternalMap(service.lat, service.lon)}>
-          <ImageIcon size={16} /> {t('external_map')}
+        <div className="card-actions-row">
+          <button className="btn btn-call" onClick={() => service.phone && onCall(service.phone)}>
+            <Phone size={16} /> {t('call')}
+          </button>
+          <button 
+            className={`btn ${selectedServiceId === service.id ? 'btn-call' : 'btn-nav'}`} 
+            onClick={() => onNavigate(service)}
+          >
+            <Navigation size={16} /> {selectedServiceId === service.id ? t('syncing') : t('navigate')}
+          </button>
+        </div>
+        <button className="btn btn-nav" style={{ width: '100%' }} onClick={() => onExternalMap(service.lat, service.lon)}>
+          <ExternalLink size={16} /> {t('external_map')}
         </button>
       </div>
     </motion.div>

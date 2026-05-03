@@ -5,7 +5,8 @@ import logging
 import uuid
 import json
 import os
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from typing import Dict, List
 from dotenv import load_dotenv
 from cachetools import TTLCache
@@ -18,11 +19,10 @@ service_cache = TTLCache(maxsize=100, ttl=300)
 # Configure Gemini
 GENAI_API_KEY = os.getenv("GEMINI_API_KEY")
 if GENAI_API_KEY:
-    genai.configure(api_key=GENAI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    client = genai.Client(api_key=GENAI_API_KEY)
 else:
     logging.warning("GEMINI_API_KEY not found. AI Vision features will be disabled.")
-    model = None
+    client = None
 
 app = FastAPI(title="ROADSoS API")
 
@@ -45,7 +45,7 @@ HEADERS = {"User-Agent": "ROADSoS/1.0 (https://github.com/yourusername/roadsos)"
 
 @app.post("/api/triage")
 async def ai_triage(language: str = Query("en", description="Preferred response language"), image: UploadFile = File(...)):
-    if not model:
+    if not client:
         raise HTTPException(status_code=503, detail="AI Service is not configured. Please add GEMINI_API_KEY.")
     
     try:
@@ -63,10 +63,17 @@ async def ai_triage(language: str = Query("en", description="Preferred response 
         KEEP YOUR RESPONSE CONCISE, ACTIONABLE, AND CALM. USE MARKDOWN FOR FORMATTING.
         """
         
-        response = model.generate_content([
-            prompt,
-            {"mime_type": "image/jpeg", "data": image_data}
-        ])
+        response = client.models.generate_content(
+            model="gemini-1.5-pro",
+            contents=[
+                types.Content(
+                    parts=[
+                        types.Part.from_bytes(data=image_data, mime_type="image/jpeg"),
+                        types.Part.from_text(text=prompt)
+                    ]
+                )
+            ]
+        )
         
         return {"analysis": response.text}
     except Exception as e:
@@ -184,7 +191,7 @@ async def apply_ai_to_results(context, results):
     """
     Applies AI recommendation without blocking the main event loop.
     """
-    if not context or not model or not results:
+    if not context or not client or not results:
         return results
 
     try:
@@ -193,7 +200,7 @@ async def apply_ai_to_results(context, results):
         recommend_prompt = f"Triage Context: {context}\nNearby: {', '.join(service_names)}\nWhich is BEST? Respond ONLY with the EXACT name."
         
         # Use asyncio.to_thread to prevent blocking the event loop
-        response = await asyncio.to_thread(model.generate_content, recommend_prompt)
+        response = await asyncio.to_thread(client.models.generate_content, model="gemini-1.5-pro", contents=recommend_prompt)
         recommended_name = response.text.strip()
         
         for r in results:
