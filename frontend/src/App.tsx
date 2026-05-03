@@ -18,7 +18,9 @@ import {
   MicOff,
   Camera,
   Activity,
-  Zap
+  Zap,
+  Check,
+  ExternalLink
 } from 'lucide-react';
 import { FIRST_AID_DATA } from './data/firstAid';
 import { getEmergencyConfig } from './data/emergencyNumbers';
@@ -29,6 +31,10 @@ import './App.css';
 const MapComponent = lazy(() => import('./components/MapComponent'));
 import ServiceCard from './components/ServiceCard';
 import ThemeToggle from './components/ThemeToggle';
+
+// Configure Production API URL
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+axios.defaults.baseURL = API_URL;
 
 interface Service {
   id: number;
@@ -115,9 +121,9 @@ function App() {
       const res = await axios.post('/api/create-session');
       const id = res.data.session_id;
       setTrackingSessionId(id);
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
-      const socket = new WebSocket(`${protocol}//${host}/ws/track/${id}`);
+      const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
+      const wsHost = API_URL.replace(/^https?:\/\//, '');
+      const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/track/${id}`);
       socket.onopen = () => socket.send(JSON.stringify({ lat, lon }));
       ws.current = socket;
       if ("geolocation" in navigator) {
@@ -201,9 +207,9 @@ function App() {
   }, [fetchRegionInfo, t]);
 
   const joinTrackingSession = useCallback((id: string) => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
-    const socket = new WebSocket(`${protocol}//${host}/ws/track/${id}`);
+    const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
+    const wsHost = API_URL.replace(/^https?:\/\//, '');
+    const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/track/${id}`);
     socket.onmessage = (e) => {
       const data = JSON.parse(e.data);
       if (data.lat && data.lon) {
@@ -317,6 +323,17 @@ function App() {
     }
   }, [location, triggerHaptic]);
 
+  const [copiedTrackingLink, setCopiedTrackingLink] = useState(false);
+
+  const shareTrackingLink = useCallback(() => {
+    if (!trackingSessionId) return;
+    const link = `${window.location.origin}/?track=${trackingSessionId}`;
+    navigator.clipboard.writeText(link);
+    setCopiedTrackingLink(true);
+    triggerHaptic(50);
+    setTimeout(() => setCopiedTrackingLink(false), 3000);
+  }, [trackingSessionId, triggerHaptic]);
+
   const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -340,12 +357,30 @@ function App() {
       setTriageHistory(updatedHistory);
       localStorage.setItem('roadsos_history', JSON.stringify(updatedHistory));
       
+      // PROACTIVE AI: If 'CRITICAL' or 'URGENT' is detected, find best service automatically
+      const lowerAnalysis = analysis.toLowerCase();
+      if (lowerAnalysis.includes('critical') || lowerAnalysis.includes('urgent')) {
+        // Trigger emergency service search if not already done
+        await getEmergencyServices();
+        // Wait for services to update, then find the recommended one
+        setTimeout(() => {
+          setServices(prev => {
+            const recommended = prev.find(s => s.is_recommended);
+            if (recommended) {
+              handleNavigate(recommended);
+              speak(t('proactive_navigation', { name: recommended.name }));
+            }
+            return prev;
+          });
+        }, 1000);
+      }
+
       triggerHaptic(200);
     } catch (err) { 
       console.error("AI Triage Error:", err);
       setError(t('ai_vision_failed')); 
     } finally { setIsAnalyzing(false); }
-  }, [i18n.language, triggerHaptic, t, triageHistory]);
+  }, [i18n.language, triggerHaptic, t, triageHistory, getEmergencyServices]);
 
   const toggleVitalsMonitoring = useCallback(async () => {
     if (isMonitoringVitals) {
@@ -456,9 +491,17 @@ function App() {
         </button>
 
         {contacts.length > 0 && (
-          <button className="btn btn-nav" style={{ width: '100%', marginBottom: '1.5rem', borderRadius: '14px', padding: '12px' }} onClick={sendAlerts}>
-            <MessageSquare size={18} /> {t('alert_contacts')}
-          </button>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
+            <button className="btn btn-nav" style={{ flex: 1, borderRadius: '14px', padding: '12px' }} onClick={sendAlerts}>
+              <MessageSquare size={18} /> {t('alert_contacts')}
+            </button>
+            {trackingSessionId && (
+              <button className="btn btn-nav" style={{ flex: 1, borderRadius: '14px', padding: '12px', background: copiedTrackingLink ? '#34c759' : 'var(--input-bg)', color: copiedTrackingLink ? 'white' : 'var(--text-main)' }} onClick={shareTrackingLink}>
+                {copiedTrackingLink ? <Check size={18} /> : <ExternalLink size={18} />}
+                {copiedTrackingLink ? 'LINK COPIED' : t('share_live')}
+              </button>
+            )}
+          </div>
         )}
 
         <AnimatePresence>

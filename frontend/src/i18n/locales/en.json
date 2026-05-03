@@ -34,5 +34,7 @@
   "location_blocked": "LOCATION BLOCKED: Please enable GPS in your browser settings.",
   "gps_lost": "GPS SIGNAL LOST: Try moving to an open area.",
   "offline_notice": "WORKING OFFLINE • CACHED DATA ONLY",
-  "tracking_active": "LIVE TRACKING ACTIVE: You are watching a shared location."
+  "tracking_active": "LIVE TRACKING ACTIVE: You are watching a shared location.",
+  "share_live": "SHARE LIVE TRACKING",
+  "proactive_navigation": "CRITICAL SITUATION: Highlighting best route to {{name}}."
 }
