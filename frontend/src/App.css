@@ -311,10 +311,53 @@ header {
 }
 
 .card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 1rem 1rem;
+}
+
+.card-actions-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
-  padding: 0 1rem 1rem;
+}
+
+.btn-icon {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.copy-btn {
+  background: none;
+  border: none;
+  color: #007aff;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.history-item {
+  background: var(--input-bg);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border: 1px solid var(--card-border);
+}
+
+.history-date {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
 }
 
 .btn {

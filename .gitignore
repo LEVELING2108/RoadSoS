@@ -10,3 +10,4 @@ __pycache__/
 .env
 frontend/node_modules/
 frontend/dist/
+GEMINI.md
