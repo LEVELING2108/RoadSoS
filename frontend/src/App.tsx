@@ -128,11 +128,17 @@ function App() {
       socket.onopen = () => socket.send(JSON.stringify({ lat, lon }));
       ws.current = socket;
       if ("geolocation" in navigator) {
-        navigator.geolocation.watchPosition((pos) => {
-          if (socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify({ lat: pos.coords.latitude, lon: pos.coords.longitude }));
-          }
-        });
+        navigator.geolocation.watchPosition(
+          (pos) => {
+            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            if (isMounted.current) setLocation(newLoc);
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ lat: pos.coords.latitude, lon: pos.coords.longitude }));
+            }
+          },
+          (err) => console.error("Tracking Error:", err),
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
       }
     } catch (e) { console.error("Tracking Session Error:", e); }
   }, []);
@@ -165,20 +171,31 @@ function App() {
       }
     };
 
-    if (!location) {
-      if ("geolocation" in navigator) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            if (isMounted.current) setLocation(newLoc);
-            fetchWithCoords(newLoc.lat, newLoc.lon);
-          },
-          () => { if (isMounted.current) { setError("Location required."); setLoading(false); } },
-          { enableHighAccuracy: true, timeout: 5000 }
-        );
-      }
-    } else {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          if (isMounted.current) setLocation(newLoc);
+          fetchWithCoords(newLoc.lat, newLoc.lon);
+        },
+        (err) => {
+          // If fresh location fails, fallback to existing location if available
+          if (location) {
+            fetchWithCoords(location.lat, location.lon);
+          } else {
+            if (isMounted.current) {
+              setError(err.code === 3 ? t('gps_lost') : t('location_blocked'));
+              setLoading(false);
+            }
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    } else if (location) {
       await fetchWithCoords(location.lat, location.lon);
+    } else {
+      setError("Geolocation not supported");
+      setLoading(false);
     }
   }, [location, aiAnalysis, isOffline, t, fetchRegionInfo, startTracking]);
 
@@ -205,7 +222,7 @@ function App() {
           }
         },
         (err) => { if (isMounted.current) setError(err.code === 1 ? t('location_blocked') : t('gps_lost')); },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 }
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     }
   }, [fetchRegionInfo, t]);
