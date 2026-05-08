@@ -1,34 +1,31 @@
-# 🚑 ROADSoS: AI-Driven Emergency Response Ecosystem
+# 🚑 ROADSoS: High-Performance Emergency Response Ecosystem
 
 [![React](https://img.shields.io/badge/Frontend-React%2019-blue?logo=react)](https://react.dev/)
 [![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![AI-Powered](https://img.shields.io/badge/AI-Gemini%201.5%20Pro-red?logo=google-gemini)](https://aistudio.google.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**ROADSoS** is a world-class, AI-driven emergency assistance platform that transforms your smartphone into an autonomous digital first responder. By combining advanced Computer Vision, Real-Time WebSockets, and Conversational AI, ROADSoS provides life-saving triage and monitoring when every second is critical.
+**ROADSoS** is a world-class emergency assistance platform that transforms your smartphone into an autonomous digital first responder. By combining real-time location intelligence, high-performance service discovery, and secure live tracking, ROADSoS provides critical coordination when every second counts.
 
 ---
 
-## 🌟 Next-Level AI Features
+## 🌟 Key Features
 
-- **🌍 Global Localization (i18n)**: Full multi-language support (English, Spanish, French, Hindi). The app, Voice AI, and Vision AI all adapt to your selected language.
+- **🌍 Global Localization (i18n)**: Full multi-language support across dozens of languages. The app automatically adapts its UI and voice guidance to your selected locale.
 - **🚨 Region-Specific SOS**: Automatically detects your country via GPS and provides direct-dial buttons for local authorities (e.g., 911, 112, 100/108).
-- **🧠 AI Vision Triage**: Snap a photo of an accident scene. Gemini 1.5 Pro instantly identifies hazards and provides instructions in your language.
-- **🎙️ Conversational Voice Dispatcher**: A hands-free, empathetic Voice AI that triages victims, provides calm guidance, and builds medical reports via natural conversation.
-- **🗺️ Predictive Smart Routing**: AI-powered dispatch that routes victims to the *best* specialized facility (Trauma, Burn Unit, etc.) based on real-time triage data.
+- **🗺️ Intelligent Service Discovery**: Instantly locates nearby hospitals, clinics, police stations, and repair shops using an optimized Overpass API integration with intelligent caching.
 - **🛰️ Live SOS Tracking**: Secure WebSocket streams allowing emergency contacts to watch your GPS location move live on a shared dashboard.
-- **⚡ Advanced Reliability**: 
-    - **Zero-Stale Geolocation**: Forced fresh GPS locks (zero caching) to ensure accuracy in fast-moving emergencies.
-    - **Smart Fallback**: Intelligent location retention that keeps you protected even if GPS signal is temporarily lost.
-    - **UI-Sync Precision**: Real-time map and UI synchronization with device hardware for seamless movement tracking.
+- **⚡ Advanced Reliability & Performance**: 
+    - **Connection Pooling**: Backend optimized with global HTTP connection pooling for lightning-fast service discovery.
+    - **Smart Geolocation**: Dual-mode GPS strategy that balances extreme accuracy during emergencies with battery-efficient background monitoring.
+    - **Zero-Stale Geolocation**: Forced fresh GPS locks to ensure accuracy in fast-moving emergencies.
 - **🎯 Precision Haptics**: Native-feel physical feedback for critical actions, ensuring clarity in high-stress situations.
+- **💓 Vital Monitoring (rPPG)**: Experimental camera-based heart rate monitoring using pixel analysis for immediate vital assessment.
 
 ---
 
 ## 🛠️ Tech Stack
 
-### AI & Intelligence
-- **Vision/NLP**: Google Gemini 1.5 Pro
+### Intelligence & Vitals
 - **Bio-Signals**: rPPG Pixel Analysis (Canvas API)
 - **Voice**: Web Speech API (Synthesis & Recognition)
 
@@ -41,8 +38,8 @@
 
 ### Backend
 - **Framework**: FastAPI (Python 3.10+)
+- **HTTP Engine**: HTTPX with Connection Pooling
 - **Session Management**: UUID-based secure tracking sessions
-- **Async**: HTTPX / Uvicorn for high-concurrency emergency requests
 
 
 ---
@@ -58,7 +55,7 @@
 cd backend
 python -m venv venv
 source venv/bin/scripts/activate  # Windows: .\venv\Scripts\activate
-pip install fastapi uvicorn httpx
+pip install -r requirements.txt
 python main.py
 ```
 *Backend runs on `http://localhost:8000`*
