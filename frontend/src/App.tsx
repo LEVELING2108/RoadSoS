@@ -12,6 +12,7 @@ import {
   List,
   Map as MapIcon, 
   X, 
+  Menu,
   MessageSquare, 
   User,
   Mic,
@@ -73,6 +74,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [showSettings, setShowSettings] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [contacts, setContacts] = useState<string[]>([]);
   const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
@@ -397,7 +399,14 @@ function App() {
         <div className="header-titles">
           <h1>ROADSoS <span style={{ fontSize: '0.6rem', background: 'var(--primary-red)', padding: '2px 6px', borderRadius: '4px' }}>{countryCode}</span></h1>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
+        
+        {/* Mobile Menu Toggle */}
+        <button className="theme-toggle mobile-only" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+          {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+
+        {/* Desktop Navigation */}
+        <div className="desktop-nav">
           {isSupported && (
             <button className="theme-toggle" onClick={toggleListening} style={{ color: isListening ? 'var(--primary-red)' : 'inherit', animation: isSpeaking ? 'pulse 1s infinite' : 'none' }}>
               {isListening ? <Mic size={20} /> : <MicOff size={20} />}
@@ -408,6 +417,45 @@ function App() {
           <ThemeToggle />
         </div>
       </header>
+
+      {/* Mobile Menu Overlay */}
+      <AnimatePresence>
+        {isMenuOpen && (
+          <motion.div 
+            className="mobile-menu-overlay"
+            initial={{ opacity: 0, x: '100%' }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+          >
+            <div className="mobile-menu-content">
+              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '1rem' }}>
+                <button className="theme-toggle" onClick={() => setIsMenuOpen(false)}><X size={24} /></button>
+              </div>
+              <nav className="mobile-nav-links">
+                {isSupported && (
+                  <button className="mobile-nav-item" onClick={() => { toggleListening(); setIsMenuOpen(false); }}>
+                    {isListening ? <Mic size={24} color="var(--primary-red)" /> : <MicOff size={24} />}
+                    <span>Voice SOS</span>
+                  </button>
+                )}
+                <button className="mobile-nav-item" onClick={() => { toggleVitalsMonitoring(); setIsMenuOpen(false); }}>
+                  <Activity size={24} color={isMonitoringVitals ? 'var(--primary-red)' : 'inherit'} />
+                  <span>Vitals Monitor</span>
+                </button>
+                <button className="mobile-nav-item" onClick={() => { setShowSettings(true); setIsMenuOpen(false); }}>
+                  <User size={24} />
+                  <span>Settings</span>
+                </button>
+                <div className="mobile-nav-item" onClick={() => setIsMenuOpen(false)}>
+                  <ThemeToggle />
+                  <span>Appearance</span>
+                </div>
+              </nav>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <main className="main-content">
         {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span></div>}
