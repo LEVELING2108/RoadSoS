@@ -51,11 +51,10 @@
 }
 
 #root {
-  width: 1126px;
+  width: 100%;
   max-width: 100%;
   margin: 0 auto;
   text-align: center;
-  border-inline: 1px solid var(--border);
   min-height: 100svh;
   display: flex;
   flex-direction: column;
@@ -64,6 +63,7 @@
 
 body {
   margin: 0;
+  overflow-x: hidden;
 }
 
 h1,
@@ -74,25 +74,19 @@ h2 {
 }
 
 h1 {
-  font-size: 56px;
+  font-size: clamp(2rem, 8vw, 3.5rem);
   letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+  margin: clamp(1rem, 4vw, 2rem) 0;
 }
 h2 {
-  font-size: 24px;
+  font-size: clamp(1.25rem, 4vw, 1.5rem);
   line-height: 118%;
   letter-spacing: -0.24px;
   margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
 }
 p {
   margin: 0;
+  font-size: clamp(0.9rem, 2.5vw, 1.1rem);
 }
 
 code,
