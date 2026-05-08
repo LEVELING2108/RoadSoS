@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Phone, Navigation, MapPin, Clock, Shield, Image as ImageIcon, Copy, Check, ExternalLink } from 'lucide-react';
+import { Phone, Navigation, MapPin, Clock, Image as ImageIcon, Copy, Check, ExternalLink } from 'lucide-react';
 
 interface Service {
   id: number;
@@ -12,7 +12,6 @@ interface Service {
   lon: number;
   image?: string;
   opening_hours?: string;
-  is_recommended?: boolean;
 }
 
 interface ServiceCardProps {
@@ -39,18 +38,13 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
 
   return (
     <motion.div 
-      className={`service-card ${service.is_recommended ? 'recommended-card' : ''}`} 
+      className="service-card" 
       initial={{ opacity: 0, y: 20 }} 
       animate={{ opacity: 1, y: 0 }} 
       exit={{ opacity: 0, scale: 0.95 }} 
       transition={{ delay: idx * 0.05 }} 
       layout
     >
-      {service.is_recommended && (
-        <div className="recommended-badge">
-          <Shield size={12} fill="white" /> {t('recommended')}
-        </div>
-      )}
       <div className="service-img" style={service.image ? { backgroundImage: `url(${service.image})` } : {}}>
         {!service.image && <ImageIcon size={32} opacity={0.3} />}
       </div>

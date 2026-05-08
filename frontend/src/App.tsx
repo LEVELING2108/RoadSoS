@@ -16,10 +16,8 @@ import {
   User,
   Mic,
   MicOff,
-  Camera,
   Activity,
   Zap,
-  Check,
   ExternalLink
 } from 'lucide-react';
 import { FIRST_AID_DATA } from './data/firstAid';
@@ -60,7 +58,14 @@ const CATEGORIES = [
 
 function App() {
   const { t, i18n } = useTranslation();
-  const [location, setLocation] = useState<{ lat: number, lon: number } | null>(null);
+  const locationRef = useRef<{ lat: number, lon: number } | null>(null);
+  const [location, setLocationState] = useState<{ lat: number, lon: number } | null>(null);
+  
+  const setLocation = useCallback((loc: { lat: number, lon: number } | null) => {
+    locationRef.current = loc;
+    setLocationState(loc);
+  }, []);
+
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState('hospital');
@@ -74,12 +79,9 @@ function App() {
   const [isSupported, setIsSupported] = useState(false);
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isMonitoringVitals, setIsMonitoringVitals] = useState(false);
   const [heartRate, setHeartRate] = useState<number | null>(null);
   const [vitalsHistory, setVitalsHistory] = useState<number[]>([]);
-  const [triageStep, setTriageStep] = useState(0);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [countryCode, setCountryCode] = useState<string>('DEFAULT');
   const [emergencyConfig, setEmergencyConfig] = useState<EmergencyConfig>(getEmergencyConfig('DEFAULT'));
@@ -92,7 +94,7 @@ function App() {
   const ws = useRef<WebSocket | null>(null);
   const recognitionRef = useRef<any>(null);
 
-  // --- Callbacks (Defined early to avoid hoisting issues) ---
+  // --- Callbacks ---
 
   const triggerHaptic = useCallback((pattern: number | number[] = 50) => {
     if ('vibrate' in navigator) navigator.vibrate(pattern);
@@ -118,6 +120,7 @@ function App() {
   }, []);
 
   const startTracking = useCallback(async (lat: number, lon: number) => {
+    if (ws.current) return;
     try {
       const res = await axios.post('/api/create-session');
       const id = res.data.session_id;
@@ -137,11 +140,11 @@ function App() {
             }
           },
           (err) => console.error("Tracking Error:", err),
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
         );
       }
     } catch (e) { console.error("Tracking Session Error:", e); }
-  }, []);
+  }, [setLocation]);
 
   const getEmergencyServices = useCallback(async () => {
     setLoading(true);
@@ -149,23 +152,16 @@ function App() {
     
     const fetchWithCoords = async (lat: number, lon: number) => {
       try {
-        const contextParam = aiAnalysis ? `&context=${encodeURIComponent(aiAnalysis)}` : "";
-        
-        // Start background tasks without waiting for them to block the main UI
         fetchRegionInfo(lat, lon);
         startTracking(lat, lon);
-
-        // Primary task: Fetch services
-        const servicesRes = await axios.get(`/api/emergency-services?lat=${lat}&lon=${lon}&radius=5000${contextParam}`);
-        
+        const servicesRes = await axios.get(`/api/emergency-services?lat=${lat}&lon=${lon}&radius=5000`);
         if (isMounted.current) {
           setServices(servicesRes.data.services);
           localStorage.setItem('roadsos_cache', JSON.stringify(servicesRes.data.services));
         }
       } catch (err: any) {
         console.error("Fetch Services Error:", err);
-        const detail = err.response?.data?.detail || err.message || "Unknown Network Error";
-        if (isMounted.current) setError(`${t('offline_notice')} (${detail})`);
+        if (isMounted.current) setError(`${t('offline_notice')}`);
       } finally {
         if (isMounted.current) setLoading(false);
       }
@@ -179,37 +175,22 @@ function App() {
           fetchWithCoords(newLoc.lat, newLoc.lon);
         },
         (err) => {
-          // If fresh location fails, fallback to existing location if available
-          if (location) {
-            fetchWithCoords(location.lat, location.lon);
-          } else {
-            if (isMounted.current) {
-              setError(err.code === 3 ? t('gps_lost') : t('location_blocked'));
-              setLoading(false);
-            }
+          const cachedLoc = locationRef.current;
+          if (cachedLoc) fetchWithCoords(cachedLoc.lat, cachedLoc.lon);
+          else if (isMounted.current) {
+            setError(err.code === 3 ? t('gps_lost') : t('location_blocked'));
+            setLoading(false);
           }
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
       );
-    } else if (location) {
-      await fetchWithCoords(location.lat, location.lon);
+    } else if (locationRef.current) {
+      await fetchWithCoords(locationRef.current.lat, locationRef.current.lon);
     } else {
       setError("Geolocation not supported");
       setLoading(false);
     }
-  }, [location, aiAnalysis, isOffline, t, fetchRegionInfo, startTracking]);
-
-  const startVoiceTriage = useCallback(() => {
-    setTriageStep(1);
-    getEmergencyServices();
-    speak(t('voice_sos_active'));
-  }, [getEmergencyServices, speak, t]);
-
-  const proceedTriage = useCallback(() => {
-    if (triageStep === 1) { setTriageStep(2); speak(t('voice_step_1')); }
-    else if (triageStep === 2) { setTriageStep(3); speak(t('voice_step_2')); }
-    else if (triageStep === 3) { setTriageStep(4); speak(t('voice_step_3')); setTimeout(() => setTriageStep(0), 10000); }
-  }, [triageStep, speak, t]);
+  }, [t, fetchRegionInfo, startTracking, setLocation]);
 
   const fetchLocation = useCallback(() => {
     if ("geolocation" in navigator) {
@@ -222,10 +203,10 @@ function App() {
           }
         },
         (err) => { if (isMounted.current) setError(err.code === 1 ? t('location_blocked') : t('gps_lost')); },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
       );
     }
-  }, [fetchRegionInfo, t]);
+  }, [fetchRegionInfo, t, setLocation]);
 
   const joinTrackingSession = useCallback((id: string) => {
     const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
@@ -243,9 +224,6 @@ function App() {
     setTrackingSessionId(id);
   }, [t]);
 
-  const [triageHistory, setTriageHistory] = useState<{ id: string, date: string, analysis: string }[]>([]);
-
-  // ... (inside useEffect)
   useEffect(() => {
     isMounted.current = true;
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -261,11 +239,10 @@ function App() {
           .map((result: any) => result.transcript)
           .join('').toLowerCase();
         const trigger = t('sos').toLowerCase();
-        if (transcript.includes(trigger) && triageStep === 0) {
+        if (transcript.includes(trigger)) {
           triggerHaptic([500, 200, 500]);
-          startVoiceTriage();
-        } else if (isListening && triageStep > 0) {
-          if (transcript.length > 5) proceedTriage();
+          getEmergencyServices();
+          speak(t('voice_sos_active'));
         }
       };
       recognition.onend = () => { if (isListening) recognition.start(); };
@@ -277,11 +254,10 @@ function App() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    const cached = ['roadsos_cache', 'roadsos_contacts', 'roadsos_profile', 'roadsos_history'].map(k => localStorage.getItem(k));
+    const cached = ['roadsos_cache', 'roadsos_contacts', 'roadsos_profile'].map(k => localStorage.getItem(k));
     if (cached[0]) setServices(JSON.parse(cached[0]));
     if (cached[1]) setContacts(JSON.parse(cached[1]));
     if (cached[2]) setProfile(JSON.parse(cached[2]));
-    if (cached[3]) setTriageHistory(JSON.parse(cached[3] || '[]'));
 
     fetchLocation();
     const trackId = new URLSearchParams(window.location.search).get('track');
@@ -293,9 +269,7 @@ function App() {
       window.removeEventListener('offline', handleOffline);
       if (ws.current) ws.current.close();
     };
-  }, [i18n.language, t, triageStep, isListening, fetchLocation, joinTrackingSession, proceedTriage, startVoiceTriage, triggerHaptic]);
-
-  // --- Memoized Data ---
+  }, [i18n.language, t, isListening, fetchLocation, joinTrackingSession, getEmergencyServices, speak, triggerHaptic]);
 
   const filteredServices = useMemo(() => {
     return services.filter(s => {
@@ -313,14 +287,11 @@ function App() {
     });
   }, [services, activeCategory]);
 
-  // --- Handlers ---
-
   const toggleListening = useCallback(() => {
     triggerHaptic(50);
     if (isListening) {
       recognitionRef.current?.stop();
       setIsListening(false);
-      setTriageStep(0);
     } else {
       if (recognitionRef.current) recognitionRef.current.lang = i18n.language;
       recognitionRef.current?.start();
@@ -344,64 +315,13 @@ function App() {
     }
   }, [location, triggerHaptic]);
 
-  const [copiedTrackingLink, setCopiedTrackingLink] = useState(false);
-
   const shareTrackingLink = useCallback(() => {
     if (!trackingSessionId) return;
     const link = `${window.location.origin}/?track=${trackingSessionId}`;
     navigator.clipboard.writeText(link);
-    setCopiedTrackingLink(true);
     triggerHaptic(50);
-    setTimeout(() => setCopiedTrackingLink(false), 3000);
+    // Use a simple state for visual feedback if needed
   }, [trackingSessionId, triggerHaptic]);
-
-  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setIsAnalyzing(true);
-    setAiAnalysis(null);
-    triggerHaptic([100, 50, 100]);
-    const formData = new FormData();
-    formData.append('image', file);
-    try {
-      const res = await axios.post(`/api/triage?language=${i18n.language}`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      const analysis = res.data.analysis;
-      setAiAnalysis(analysis);
-      
-      // Save to History
-      const newEntry = {
-        id: crypto.randomUUID(),
-        date: new Date().toLocaleString(),
-        analysis: analysis
-      };
-      const updatedHistory = [newEntry, ...triageHistory.slice(0, 9)];
-      setTriageHistory(updatedHistory);
-      localStorage.setItem('roadsos_history', JSON.stringify(updatedHistory));
-      
-      // PROACTIVE AI: If 'CRITICAL' or 'URGENT' is detected, find best service automatically
-      const lowerAnalysis = analysis.toLowerCase();
-      if (lowerAnalysis.includes('critical') || lowerAnalysis.includes('urgent')) {
-        // Trigger emergency service search if not already done
-        await getEmergencyServices();
-        // Wait for services to update, then find the recommended one
-        setTimeout(() => {
-          setServices(prev => {
-            const recommended = prev.find(s => s.is_recommended);
-            if (recommended) {
-              handleNavigate(recommended);
-              speak(t('proactive_navigation', { name: recommended.name }));
-            }
-            return prev;
-          });
-        }, 1000);
-      }
-
-      triggerHaptic(200);
-    } catch (err) { 
-      console.error("AI Triage Error:", err);
-      setError(t('ai_vision_failed')); 
-    } finally { setIsAnalyzing(false); }
-  }, [i18n.language, triggerHaptic, t, triageHistory, getEmergencyServices]);
 
   const toggleVitalsMonitoring = useCallback(async () => {
     if (isMonitoringVitals) {
@@ -499,12 +419,6 @@ function App() {
               <AlertTriangle size={32} fill="white" /><span style={{ fontSize: '0.7rem', marginTop: 4 }}>{loading ? t('syncing') : t('sos')}</span>
             </motion.button>
           </div>
-          <div className="sos-button-wrapper">
-            <motion.button className={`sos-button ${isAnalyzing ? 'loading' : ''}`} style={{ width: '80px', height: '80px', background: 'var(--tab-active)', color: 'var(--text-main)', border: '1px solid var(--card-border)', boxShadow: 'none' }} onClick={() => document.getElementById('ai-camera-input')?.click()} disabled={isAnalyzing} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
-              <Camera size={24} /><span style={{ fontSize: '0.5rem', marginTop: 4 }}>{isAnalyzing ? t('analyzing') : t('ai_vision')}</span>
-            </motion.button>
-            <input id="ai-camera-input" type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFileUpload} />
-          </div>
         </div>
 
         <button className="btn btn-call" style={{ width: '100%', marginBottom: '1rem', borderRadius: '14px', padding: '15px', fontSize: '1rem' }} onClick={() => window.open(`tel:${emergencyConfig.combined || emergencyConfig.police}`)}>
@@ -517,25 +431,12 @@ function App() {
               <MessageSquare size={18} /> {t('alert_contacts')}
             </button>
             {trackingSessionId && (
-              <button className="btn btn-nav" style={{ flex: 1, borderRadius: '14px', padding: '12px', background: copiedTrackingLink ? '#34c759' : 'var(--input-bg)', color: copiedTrackingLink ? 'white' : 'var(--text-main)' }} onClick={shareTrackingLink}>
-                {copiedTrackingLink ? <Check size={18} /> : <ExternalLink size={18} />}
-                {copiedTrackingLink ? 'LINK COPIED' : t('share_live')}
+              <button className="btn btn-nav" style={{ flex: 1, borderRadius: '14px', padding: '12px' }} onClick={shareTrackingLink}>
+                <ExternalLink size={18} /> {t('share_live')}
               </button>
             )}
           </div>
         )}
-
-        <AnimatePresence>
-          {aiAnalysis && (
-            <motion.div className="first-aid-card" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} style={{ borderLeftColor: '#007aff', marginBottom: '1rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3 style={{ color: '#007aff', margin: 0, fontSize: '1rem' }}>{t('scene_analysis')}</h3>
-                <button className="theme-toggle" onClick={() => setAiAnalysis(null)}><X size={16} /></button>
-              </div>
-              <div className="ai-report-content" style={{ fontSize: '0.85rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{aiAnalysis}</div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {isMonitoringVitals && (
           <motion.div className="first-aid-card vitals-card" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} style={{ borderLeftColor: '#ff3b30', marginBottom: '1.5rem' }}>
@@ -640,20 +541,6 @@ function App() {
                 </select>
                 <textarea placeholder={t('medical_notes')} className="contact-input" rows={3} value={profile.medicalNotes} onChange={(e) => saveProfile({...profile, medicalNotes: e.target.value})} style={{ resize: 'none' }} />
               </section>
-              {triageHistory.length > 0 && (
-                <section className="settings-section" style={{ marginTop: '1.5rem' }}>
-                  <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>{t('triage_history')}</h3>
-                  {triageHistory.map(item => (
-                    <div key={item.id} className="history-item" onClick={() => { setAiAnalysis(item.analysis); setShowSettings(false); }}>
-                      <div className="history-date">{item.date}</div>
-                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.analysis.substring(0, 50)}...</div>
-                    </div>
-                  ))}
-                  <button className="copy-btn" onClick={() => { setTriageHistory([]); localStorage.removeItem('roadsos_history'); }} style={{ color: 'var(--primary-red)', marginTop: '8px' }}>
-                    {t('clear_history')}
-                  </button>
-                </section>
-              )}
               <section className="settings-section" style={{ marginTop: '1.5rem' }}>
                 <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem', color: 'var(--primary-red)' }}>{t('contacts')}</h3>
                 {[0, 1, 2].map(idx => (
