@@ -40,9 +40,8 @@
 - **Framework**: FastAPI (Python 3.10+)
 - **HTTP Engine**: HTTPX with Connection Pooling
 - **Session Management**: UUID-based secure tracking sessions
+--
 
-
----
 
 ## 🚀 Getting Started
 
