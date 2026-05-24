@@ -589,43 +589,56 @@ function App() {
         )}
       </AnimatePresence>
 
-      {showSettings && (
-        <div className="settings-overlay" onClick={(e) => e.target === e.currentTarget && setShowSettings(false)}>
-          <div className="settings-modal">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2>{t('settings')}</h2><button className="theme-toggle" onClick={() => setShowSettings(false)}><X size={20} /></button>
-            </div>
-            <div className="settings-scroll-area">
-              <section className="settings-section">
-                <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>Language / भाषा</h3>
-                <select className="contact-input" value={i18n.language} onChange={(e) => i18n.changeLanguage(e.target.value)}>
-                  <optgroup label="Global Languages">
-                    <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option>
-                  </optgroup>
-                  <optgroup label="Indian Scheduled Languages">
-                    <option value="hi">हिन्दी (Hindi)</option><option value="as">অসমীয়া (Assamese)</option><option value="bn">বাংলা (Bengali)</option><option value="brx">बर' (Bodo)</option><option value="doi">डोगरी (Dogri)</option><option value="gu">ગુજરાતી (Gujarati)</option><option value="kn">ಕನ್ನಡ (Kannada)</option><option value="ks">कٲशُر (Kashmiri)</option><option value="kok">कोंकणी (Konkani)</option><option value="mai">मैथिली (Maithili)</option><option value="ml">മലയാളം (Malayalam)</option><option value="mni">মৈতৈলোন (Manipuri)</option><option value="mr">मराठी (Marathi)</option><option value="ne">नेपाली (Nepali)</option><option value="or">ଓଡ଼ିଆ (Odia)</option><option value="pa">ਪੰਜਾਬੀ (Punjabi)</option><option value="sa">संस्कृतम् (Sanskrit)</option><option value="sat">संताली (Santali)</option><option value="sd">सिंधी (Sindhi)</option><option value="ta">தமிழ் (Tamil)</option><option value="te">తెలుగు (Telugu)</option><option value="ur">اردो (Urdu)</option>
-                  </optgroup>
-                </select>
-              </section>
-              <section className="settings-section" style={{ marginTop: '1.5rem' }}>
-                <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>{t('personal_details')}</h3>
-                <input type="text" placeholder={t('full_name')} className="contact-input" value={profile.name} onChange={(e) => saveProfile({...profile, name: e.target.value})} />
-                <select className="contact-input" value={profile.bloodGroup} onChange={(e) => saveProfile({...profile, bloodGroup: e.target.value})}>
-                  <option value="">{t('blood_group')}</option>{['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => <option key={bg} value={bg}>{bg}</option>)}
-                </select>
-                <textarea placeholder={t('medical_notes')} className="contact-input" rows={3} value={profile.medicalNotes} onChange={(e) => saveProfile({...profile, medicalNotes: e.target.value})} style={{ resize: 'none' }} />
-              </section>
-              <section className="settings-section" style={{ marginTop: '1.5rem' }}>
-                <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem', color: 'var(--primary-red)' }}>{t('contacts')}</h3>
-                {[0, 1, 2].map(idx => (
-                  <input key={idx} type="tel" placeholder={`Contact ${idx + 1}`} className="contact-input" value={contacts[idx] || ''} onChange={(e) => { const newC = [...contacts]; newC[idx] = e.target.value; saveContacts(newC.filter(c => c !== '')); }} />
-                ))}
-              </section>
-            </div>
-            <div className="modal-actions" style={{ marginTop: '1.5rem' }}><button className="btn btn-call" style={{ width: '100%' }} onClick={() => setShowSettings(false)}>{t('save_close')}</button></div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {showSettings && (
+          <motion.div 
+            className="settings-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={(e) => e.target === e.currentTarget && setShowSettings(false)}
+          >
+            <motion.div 
+              className="settings-modal"
+              initial={{ y: 50, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 50, opacity: 0 }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h2>{t('settings')}</h2><button className="theme-toggle" onClick={() => setShowSettings(false)}><X size={20} /></button>
+              </div>
+              <div className="settings-scroll-area">
+                <section className="settings-section">
+                  <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>Language / भाषा</h3>
+                  <select className="contact-input" value={i18n.language} onChange={(e) => i18n.changeLanguage(e.target.value)}>
+                    <optgroup label="Global Languages">
+                      <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option>
+                    </optgroup>
+                    <optgroup label="Indian Scheduled Languages">
+                      <option value="hi">हिन्दी (Hindi)</option><option value="as">অসমীয়া (Assamese)</option><option value="bn">বাংলা (Bengali)</option><option value="brx">बर' (Bodo)</option><option value="doi">डोगरी (Dogri)</option><option value="gu">ગુજરાતી (Gujarati)</option><option value="kn">ಕನ್ನಡ (Kannada)</option><option value="ks">कٲशُر (Kashmiri)</option><option value="kok">कोंकणी (Konkani)</option><option value="mai">मैथिली (Maithili)</option><option value="ml">മലയാളം (Malayalam)</option><option value="mni">মৈতৈলোন (Manipuri)</option><option value="mr">मराठी (Marathi)</option><option value="ne">नेपाली (Nepali)</option><option value="or">ଓଡ଼ିଆ (Odia)</option><option value="pa">ਪੰਜਾਬी (Punjabi)</option><option value="sa">संस्कृतम् (Sanskrit)</option><option value="sat">संताली (Santali)</option><option value="sd">सिंधी (Sindhi)</option><option value="ta">தமிழ் (Tamil)</option><option value="te">తెలుగు (Telugu)</option><option value="ur">اردو (Urdu)</option>
+                    </optgroup>
+                  </select>
+                </section>
+                <section className="settings-section" style={{ marginTop: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>{t('personal_details')}</h3>
+                  <input type="text" placeholder={t('full_name')} className="contact-input" value={profile.name} onChange={(e) => saveProfile({...profile, name: e.target.value})} />
+                  <select className="contact-input" value={profile.bloodGroup} onChange={(e) => saveProfile({...profile, bloodGroup: e.target.value})}>
+                    <option value="">{t('blood_group')}</option>{['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => <option key={bg} value={bg}>{bg}</option>)}
+                  </select>
+                  <textarea placeholder={t('medical_notes')} className="contact-input" rows={3} value={profile.medicalNotes} onChange={(e) => saveProfile({...profile, medicalNotes: e.target.value})} style={{ resize: 'none' }} />
+                </section>
+                <section className="settings-section" style={{ marginTop: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem', color: 'var(--primary-red)' }}>{t('contacts')}</h3>
+                  {[0, 1, 2].map(idx => (
+                    <input key={idx} type="tel" placeholder={`Contact ${idx + 1}`} className="contact-input" value={contacts[idx] || ''} onChange={(e) => { const newC = [...contacts]; newC[idx] = e.target.value; saveContacts(newC.filter(c => c !== '')); }} />
+                  ))}
+                </section>
+              </div>
+              <div className="modal-actions" style={{ marginTop: '1.5rem' }}><button className="btn btn-call" style={{ width: '100%' }} onClick={() => setShowSettings(false)}>{t('save_close')}</button></div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <footer style={{ textAlign: 'center', padding: '2rem', fontSize: '0.7rem', opacity: 0.5 }}>ROADSoS GLOBAL EMERGENCY NETWORK © 2026</footer>
     </div>
   );
