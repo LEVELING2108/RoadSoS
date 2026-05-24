@@ -9,3 +9,13 @@ services:
         sync: false
       - key: PORT
         value: 8000
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: roadsos-redis
+          property: connectionString
+
+  - type: redis
+    name: roadsos-redis
+    ipAllowList: [] # Only allow internal connections
+    plan: free # Use the free tier
