@@ -471,7 +471,7 @@ function App() {
         <div className="sos-section">
           <div className="sos-button-wrapper">
             {!loading && <motion.div className="sos-ripple" initial={{ scale: 1, opacity: 0.8 }} animate={{ scale: 1.8, opacity: 0 }} transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }} />}
-            <motion.button className={`sos-button ${loading ? 'loading' : ''}`} onClick={handleSOS} disabled={loading} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
+            <motion.button className={`sos-button ${loading ? 'loading' : ''}`} onClick={() => { triggerHaptic([100, 50, 100]); getEmergencyServices(); }} disabled={loading} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
               <AlertTriangle size={32} fill="white" /><span style={{ fontSize: '0.7rem', marginTop: 4 }}>{loading ? t('syncing') : t('sos')}</span>
             </motion.button>
           </div>
