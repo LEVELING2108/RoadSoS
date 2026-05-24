@@ -5,15 +5,17 @@ import logging
 import uuid
 import json
 import os
+import asyncio
+import redis.asyncio as redis
 from typing import Dict, List
 from dotenv import load_dotenv
-from cachetools import TTLCache
 from contextlib import asynccontextmanager
 
 load_dotenv()
 
-# Initialize Cache: 100 max items, 5 minute (300s) expiry
-service_cache = TTLCache(maxsize=100, ttl=300)
+# Redis Configuration
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
 # Global HTTP client for connection pooling
 http_client = httpx.AsyncClient(
@@ -24,16 +26,19 @@ http_client = httpx.AsyncClient(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: client is already initialized
+    # Test redis connection
+    try:
+        await redis_client.ping()
+        logging.info("Connected to Redis")
+    except Exception as e:
+        logging.error(f"Redis Connection Error: {e}")
+    
     yield
-    # Shutdown: close the global client
+    # Shutdown: close the global clients
     await http_client.aclose()
+    await redis_client.close()
 
 app = FastAPI(title="ROADSoS API", lifespan=lifespan)
-
-# Store active tracking sessions: {session_id: [websocket_clients]}
-tracking_sessions: Dict[str, List[WebSocket]] = {}
-# Store last known location for each session: {session_id: {lat, lon}}
-session_locations: Dict[str, dict] = {}
 
 # Enable CORS for frontend integration
 app.add_middleware(
@@ -49,35 +54,52 @@ OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 @app.post("/api/create-session")
 async def create_session():
     session_id = str(uuid.uuid4())
-    tracking_sessions[session_id] = []
+    # No need to store anything locally, Redis will handle it
     return {"session_id": session_id}
+
+async def redis_listener(websocket: WebSocket, session_id: str):
+    """Listens for updates from Redis Pub/Sub and sends them to the WebSocket."""
+    pubsub = redis_client.pubsub()
+    await pubsub.subscribe(f"track:{session_id}")
+    try:
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                await websocket.send_text(message["data"])
+    except Exception as e:
+        logging.error(f"Redis Listener Error: {e}")
+    finally:
+        await pubsub.unsubscribe(f"track:{session_id}")
+        await pubsub.close()
 
 @app.websocket("/ws/track/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
     await websocket.accept()
-    if session_id not in tracking_sessions:
-        tracking_sessions[session_id] = []
     
-    tracking_sessions[session_id].append(websocket)
+    # Send last known location if available
+    last_loc = await redis_client.get(f"loc:{session_id}")
+    if last_loc:
+        await websocket.send_text(last_loc)
     
-    if session_id in session_locations:
-        await websocket.send_json(session_locations[session_id])
+    # Start the background task to listen for Redis updates
+    listener_task = asyncio.create_task(redis_listener(websocket, session_id))
     
     try:
         while True:
             data = await websocket.receive_text()
-            location_data = json.loads(data)
-            session_locations[session_id] = location_data
-            
-            for client in tracking_sessions[session_id]:
-                if client != websocket:
-                    try:
-                        await client.send_json(location_data)
-                    except:
-                        pass
+            # Update last known location in Redis (Expires in 1 hour)
+            await redis_client.set(f"loc:{session_id}", data, ex=3600)
+            # Broadcast to other clients via Redis Pub/Sub
+            await redis_client.publish(f"track:{session_id}", data)
     except WebSocketDisconnect:
-        if session_id in tracking_sessions:
-            tracking_sessions[session_id].remove(websocket)
+        logging.info(f"WebSocket disconnected for session {session_id}")
+    except Exception as e:
+        logging.error(f"WebSocket Error: {e}")
+    finally:
+        listener_task.cancel()
+        try:
+            await listener_task
+        except asyncio.CancelledError:
+            pass
 
 @app.get("/api/emergency-services")
 async def get_emergency_services(
@@ -86,12 +108,14 @@ async def get_emergency_services(
     radius: int = Query(5000, description="Search radius in meters")
 ):
     """
-    Fetch nearby emergency services with performance optimizations.
+    Fetch nearby emergency services with Redis caching.
     """
-    cache_key = f"{round(lat, 3)}_{round(lon, 3)}_{radius}"
+    cache_key = f"svc:{round(lat, 3)}_{round(lon, 3)}_{radius}"
     
-    if cache_key in service_cache:
-        return {"services": service_cache[cache_key]}
+    # Try fetching from Redis cache
+    cached_data = await redis_client.get(cache_key)
+    if cached_data:
+        return {"services": json.loads(cached_data)}
 
     query = f"""
     [out:json][timeout:10];
@@ -130,7 +154,8 @@ async def get_emergency_services(
             "is_recommended": False
         })
     
-    service_cache[cache_key] = results
+    # Store in Redis with 5-minute expiry
+    await redis_client.set(cache_key, json.dumps(results), ex=300)
     return {"services": results}
 
 @app.get("/health")
