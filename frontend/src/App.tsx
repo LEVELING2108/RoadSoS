@@ -147,10 +147,9 @@ function App() {
     } catch (e) { console.error("Tracking Session Error:", e); }
   }, [setLocation]);
 
-  const getEmergencyServices = useCallback(async (silent = false) => {
+  const getEmergencyServices = useCallback(async () => {
     setLoading(true);
     setError(null);
-    if (!silent) setShowBystanderChecklist(true);
     
     const fetchWithCoords = async (lat: number, lon: number) => {
       try {
@@ -243,7 +242,7 @@ function App() {
         const trigger = t('sos').toLowerCase();
         if (transcript.includes(trigger)) {
           triggerHaptic([500, 200, 500]);
-          getEmergencyServices();
+          handleSOS();
           speak(t('voice_sos_active'));
         }
       };
@@ -392,6 +391,11 @@ function App() {
     }
   };
 
+  const handleSOS = () => {
+    triggerHaptic([100, 50, 100]);
+    window.open(`tel:${emergencyConfig.combined || emergencyConfig.police}`);
+  };
+
   return (
     <div className="app-container">
       {isOffline && <div className="offline-notice">{t('offline_notice')}</div>}
@@ -419,6 +423,7 @@ function App() {
             </button>
           )}
           <button className="theme-toggle" onClick={toggleVitalsMonitoring} style={{ color: isMonitoringVitals ? 'var(--primary-red)' : 'inherit' }}><Activity size={20} /></button>
+          <button className="theme-toggle" onClick={() => setShowBystanderChecklist(true)}><ClipboardCheck size={20} /></button>
           <button className="theme-toggle" onClick={() => setShowSettings(true)}><User size={20} /></button>
           <ThemeToggle />
         </div>
@@ -432,6 +437,10 @@ function App() {
                 <button className="theme-toggle" onClick={() => setIsMenuOpen(false)}><X size={24} /></button>
               </div>
               <nav className="mobile-nav-links">
+                <button className="mobile-nav-item" onClick={() => { setShowBystanderChecklist(true); setIsMenuOpen(false); }}>
+                  <ClipboardCheck size={24} color="var(--primary-red)" />
+                  <span>Bystander Checklist</span>
+                </button>
                 {isSupported && (
                   <button className="mobile-nav-item" onClick={() => { toggleListening(); setIsMenuOpen(false); }}>
                     {isListening ? <Mic size={24} color="var(--primary-red)" /> : <MicOff size={24} />}
@@ -462,7 +471,7 @@ function App() {
         <div className="sos-section">
           <div className="sos-button-wrapper">
             {!loading && <motion.div className="sos-ripple" initial={{ scale: 1, opacity: 0.8 }} animate={{ scale: 1.8, opacity: 0 }} transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }} />}
-            <motion.button className={`sos-button ${loading ? 'loading' : ''}`} onClick={() => { triggerHaptic([100, 50, 100]); getEmergencyServices(); }} disabled={loading} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
+            <motion.button className={`sos-button ${loading ? 'loading' : ''}`} onClick={handleSOS} disabled={loading} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
               <AlertTriangle size={32} fill="white" /><span style={{ fontSize: '0.7rem', marginTop: 4 }}>{loading ? t('syncing') : t('sos')}</span>
             </motion.button>
           </div>
@@ -505,7 +514,7 @@ function App() {
 
         <div className="category-bar">
           {CATEGORIES.map((cat, idx) => (
-            <motion.div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => { triggerHaptic(10); setActiveCategory(cat.id); if (cat.id !== 'firstaid' && location) getEmergencyServices(true); }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
+            <motion.div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => { triggerHaptic(10); setActiveCategory(cat.id); if (cat.id !== 'firstaid' && location) getEmergencyServices(); }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
               <cat.icon size={18} />{t(cat.label)}
             </motion.div>
           ))}
@@ -626,7 +635,7 @@ function App() {
                       <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option>
                     </optgroup>
                     <optgroup label="Indian Scheduled Languages">
-                      <option value="hi">हिन्दी (Hindi)</option><option value="as">অসমীয়া (Assamese)</option><option value="bn">বাংলা (Bengali)</option><option value="brx">बर' (Bodo)</option><option value="doi">डोगरी (Dogri)</option><option value="gu">ગુજરાતી (Gujarati)</option><option value="kn">ಕನ್ನಡ (Kannada)</option><option value="ks">कٲशُر (Kashmiri)</option><option value="kok">कोंकणी (Konkani)</option><option value="mai">मैथिली (Maithili)</option><option value="ml">മലയാളം (Malayalam)</option><option value="mni">মৈতৈলোন (Manipuri)</option><option value="mr">मराठी (Marathi)</option><option value="ne">नेपाली (Nepali)</option><option value="or">ଓଡ଼ିଆ (Odia)</option><option value="pa">ਪੰਜਾਬी (Punjabi)</option><option value="sa">संस्कृतम् (Sanskrit)</option><option value="sat">संताली (Santali)</option><option value="sd">सिंधी (Sindhi)</option><option value="ta">தமிழ் (Tamil)</option><option value="te">తెలుగు (Telugu)</option><option value="ur">اردو (Urdu)</option>
+                      <option value="hi">हिन्दी (Hindi)</option><option value="as">অসমীया (Assamese)</option><option value="bn">বাংলা (Bengali)</option><option value="brx">बर' (Bodo)</option><option value="doi">डोगरी (Dogri)</option><option value="gu">ગુજરાતી (Gujarati)</option><option value="kn">ಕನ್ನಡ (Kannada)</option><option value="ks">कٲशُر (Kashmiri)</option><option value="kok">कोंकणी (Konkani)</option><option value="mai">मैथिली (Maithili)</option><option value="ml">മലയാളം (Malayalam)</option><option value="mni">মৈতৈলোন (Manipuri)</option><option value="mr">मराठी (Marathi)</option><option value="ne">नेपाली (Nepali)</option><option value="or">ଓଡ଼ିଆ (Odia)</option><option value="pa">ਪੰਜਾਬੀ (Punjabi)</option><option value="sa">संस्कृतम् (Sanskrit)</option><option value="sat">संताली (Santali)</option><option value="sd">सिंधी (Sindhi)</option><option value="ta">தமிழ் (Tamil)</option><option value="te">తెలుగు (Telugu)</option><option value="ur">اردو (Urdu)</option>
                     </optgroup>
                   </select>
                 </section>
