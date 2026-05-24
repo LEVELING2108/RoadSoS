@@ -471,7 +471,7 @@ function App() {
         <div className="sos-section">
           <div className="sos-button-wrapper">
             {!loading && <motion.div className="sos-ripple" initial={{ scale: 1, opacity: 0.8 }} animate={{ scale: 1.8, opacity: 0 }} transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }} />}
-            <motion.button className={`sos-button ${loading ? 'loading' : ''}`} onClick={handleSOS} disabled={loading} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
+            <motion.button className={`sos-button ${loading ? 'loading' : ''}`} onClick={() => { triggerHaptic([100, 50, 100]); getEmergencyServices(); }} disabled={loading} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
               <AlertTriangle size={32} fill="white" /><span style={{ fontSize: '0.7rem', marginTop: 4 }}>{loading ? t('syncing') : t('sos')}</span>
             </motion.button>
           </div>
@@ -514,7 +514,7 @@ function App() {
 
         <div className="category-bar">
           {CATEGORIES.map((cat, idx) => (
-            <motion.div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => { triggerHaptic(10); setActiveCategory(cat.id); if (cat.id !== 'firstaid' && location) getEmergencyServices(); }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
+            <motion.div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => { triggerHaptic(10); setActiveCategory(cat.id); }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
               <cat.icon size={18} />{t(cat.label)}
             </motion.div>
           ))}
