@@ -49,12 +49,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# List of Overpass API mirrors for high availability
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.osm.ch/api/interpreter"
+]
 
 @app.post("/api/create-session")
 async def create_session():
     session_id = str(uuid.uuid4())
-    # No need to store anything locally, Redis will handle it
     return {"session_id": session_id}
 
 async def redis_listener(websocket: WebSocket, session_id: str):
@@ -101,6 +105,21 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         except asyncio.CancelledError:
             pass
 
+async def fetch_from_overpass(query: str):
+    """
+    Attempts to fetch data from Overpass API mirrors with failover logic.
+    """
+    for endpoint in OVERPASS_ENDPOINTS:
+        try:
+            logging.info(f"Attempting fetch from {endpoint}")
+            response = await http_client.post(endpoint, data={"data": query}, timeout=15.0)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logging.error(f"Error fetching from {endpoint}: {e}")
+            continue
+    raise HTTPException(status_code=503, detail="All emergency data providers are currently busy. Please try again.")
+
 @app.get("/api/emergency-services")
 async def get_emergency_services(
     lat: float = Query(..., description="Latitude of the location"),
@@ -108,7 +127,7 @@ async def get_emergency_services(
     radius: int = Query(5000, description="Search radius in meters")
 ):
     """
-    Fetch nearby emergency services with Redis caching.
+    Fetch nearby emergency services with Redis caching, Trauma prioritization, and Failover.
     """
     cache_key = f"svc:{round(lat, 3)}_{round(lon, 3)}_{radius}"
     
@@ -117,42 +136,62 @@ async def get_emergency_services(
     if cached_data:
         return {"services": json.loads(cached_data)}
 
+    # Enhanced query to include showrooms and specific trauma/emergency tags
     query = f"""
-    [out:json][timeout:10];
+    [out:json][timeout:15];
     (
-      nwr(around:{radius},{lat},{lon})["amenity"~"hospital|clinic|doctors|pharmacy|police|fire_station|fuel|bicycle_repair_station|emergency_phone"];
+      // Priority 1: Trauma Centers and Emergency Hospitals
+      nwr(around:{radius},{lat},{lon})["amenity"="hospital"]["emergency"="yes"];
+      nwr(around:{radius},{lat},{lon})["healthcare:speciality"~"trauma|emergency"];
+      
+      // Priority 2: General Medical
+      nwr(around:{radius},{lat},{lon})["amenity"~"hospital|clinic|doctors|pharmacy"];
+      
+      // Priority 3: Police & Fire
+      nwr(around:{radius},{lat},{lon})["amenity"~"police|fire_station"];
+      
+      // Priority 4: Vehicle Rescue & Support (Including Showrooms & Tyres)
       nwr(around:{radius},{lat},{lon})["shop"~"car_repair|motorcycle_repair|tyres|car|motorcycle"];
-      nwr(around:{radius},{lat},{lon})["emergency"~"ambulance_station|tow_truck|phone"];
+      nwr(around:{radius},{lat},{lon})["emergency"~"ambulance_station|tow_truck"];
+      nwr(around:{radius},{lat},{lon})["amenity"="fuel"];
     );
     out center;
     """
 
-    try:
-        response = await http_client.post(OVERPASS_URL, data={"data": query})
-        response.raise_for_status()
-        data = response.json()
-    except Exception as e:
-        logging.error(f"Overpass Error: {e}")
-        raise HTTPException(status_code=503, detail="Emergency service provider is currently busy. Please try again.")
-
+    data = await fetch_from_overpass(query)
     elements = data.get("elements", [])
     results = []
     
     for el in elements:
         tags = el.get("tags", {})
-        category = tags.get("amenity") or tags.get("shop") or tags.get("emergency") or tags.get("healthcare")
+        amenity = tags.get("amenity")
+        shop = tags.get("shop")
+        emergency = tags.get("emergency")
+        speciality = tags.get("healthcare:speciality", "")
+        
+        category = amenity or shop or emergency or tags.get("healthcare")
         if not category: continue
+
+        # Proactive Trauma identification
+        is_trauma = "trauma" in speciality.lower() or tags.get("emergency") == "yes"
+        
+        # Highlighting Showrooms vs Repairs
+        is_showroom = shop in ["car", "motorcycle"]
 
         results.append({
             "id": el.get("id"),
             "name": tags.get("name") or f"Nearby {category.replace('_', ' ').title()}",
             "category": category,
+            "type": "trauma_center" if is_trauma else ("showroom" if is_showroom else category),
             "phone": tags.get("phone") or tags.get("contact:phone") or tags.get("emergency:phone"),
             "lat": el.get("lat") or el.get("center", {}).get("lat"),
             "lon": el.get("lon") or el.get("center", {}).get("lon"),
             "address": tags.get("addr:full") or f"{tags.get('addr:street', '')} {tags.get('addr:housenumber', '')}".strip(),
-            "is_recommended": False
+            "is_recommended": is_trauma
         })
+    
+    # Sort results to put recommended (trauma) at the top
+    results.sort(key=lambda x: x["is_recommended"], reverse=True)
     
     # Store in Redis with 5-minute expiry
     await redis_client.set(cache_key, json.dumps(results), ex=300)
