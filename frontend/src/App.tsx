@@ -225,6 +225,11 @@ function App() {
     setTrackingSessionId(id);
   }, [t, setLocation]);
 
+  const handleSOS = useCallback(() => {
+    triggerHaptic([100, 50, 100]);
+    window.open(`tel:${emergencyConfig.combined || emergencyConfig.police}`);
+  }, [emergencyConfig, triggerHaptic]);
+
   useEffect(() => {
     isMounted.current = true;
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -270,7 +275,7 @@ function App() {
       window.removeEventListener('offline', handleOffline);
       if (ws.current) ws.current.close();
     };
-  }, [i18n.language, t, isListening, fetchLocation, joinTrackingSession, getEmergencyServices, speak, triggerHaptic]);
+  }, [i18n.language, t, isListening, fetchLocation, joinTrackingSession, speak, triggerHaptic, handleSOS]);
 
   const filteredServices = useMemo(() => {
     return services.filter(s => {
@@ -389,11 +394,6 @@ function App() {
       triggerHaptic(20);
       alert(t('location_copied'));
     }
-  };
-
-  const handleSOS = () => {
-    triggerHaptic([100, 50, 100]);
-    window.open(`tel:${emergencyConfig.combined || emergencyConfig.police}`);
   };
 
   return (
@@ -635,7 +635,7 @@ function App() {
                       <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option>
                     </optgroup>
                     <optgroup label="Indian Scheduled Languages">
-                      <option value="hi">हिन्दी (Hindi)</option><option value="as">অসমীया (Assamese)</option><option value="bn">বাংলা (Bengali)</option><option value="brx">बर' (Bodo)</option><option value="doi">डोगरी (Dogri)</option><option value="gu">ગુજરાતી (Gujarati)</option><option value="kn">ಕನ್ನಡ (Kannada)</option><option value="ks">कٲशُر (Kashmiri)</option><option value="kok">कोंकणी (Konkani)</option><option value="mai">मैथिली (Maithili)</option><option value="ml">മലയാളം (Malayalam)</option><option value="mni">মৈতৈলোন (Manipuri)</option><option value="mr">मराठी (Marathi)</option><option value="ne">नेपाली (Nepali)</option><option value="or">ଓଡ଼ିଆ (Odia)</option><option value="pa">ਪੰਜਾਬੀ (Punjabi)</option><option value="sa">संस्कृतम् (Sanskrit)</option><option value="sat">संताली (Santali)</option><option value="sd">सिंधी (Sindhi)</option><option value="ta">தமிழ் (Tamil)</option><option value="te">తెలుగు (Telugu)</option><option value="ur">اردو (Urdu)</option>
+                      <option value="hi">हिन्दी (Hindi)</option><option value="as">অসমীয়া (Assamese)</option><option value="bn">বাংলা (Bengali)</option><option value="brx">बर' (Bodo)</option><option value="doi">डोगरी (Dogri)</option><option value="gu">ગુજરાતી (Gujarati)</option><option value="kn">ಕನ್ನಡ (Kannada)</option><option value="ks">ಕಶ್ಮೀರಿ (Kashmiri)</option><option value="kok">कोंकणी (Konkani)</option><option value="mai">मैथिली (Maithili)</option><option value="ml">മലയാളം (Malayalam)</option><option value="mni">মৈতৈলোন (Manipuri)</option><option value="mr">मराठी (Marathi)</option><option value="ne">नेपाली (Nepali)</option><option value="or">ଓଡ଼ିଆ (Odia)</option><option value="pa">ਪੰਜਾਬੀ (Punjabi)</option><option value="sa">संस्कृतम् (Sanskrit)</option><option value="sat">संताली (Santali)</option><option value="sd">सिंधी (Sindhi)</option><option value="ta">தமிழ் (Tamil)</option><option value="te">తెలుగు (Telugu)</option><option value="ur">اردو (Urdu)</option>
                     </optgroup>
                   </select>
                 </section>
