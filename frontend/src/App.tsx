@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense, useMemo } from 'react';
 import axios from 'axios';
 import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
+  Phone, 
   ShieldAlert, 
   Stethoscope, 
   Wrench, 
@@ -17,7 +18,8 @@ import {
   Mic,
   MicOff,
   Activity,
-  Zap
+  Zap,
+  ExternalLink
 } from 'lucide-react';
 import { FIRST_AID_DATA } from './data/firstAid';
 import { getEmergencyConfig } from './data/emergencyNumbers';
@@ -76,10 +78,14 @@ function App() {
   const [contacts, setContacts] = useState<string[]>([]);
   const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
+  const [isSupported, setIsSupported] = useState(false);
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
+  const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [isMonitoringVitals, setIsMonitoringVitals] = useState(false);
   const [heartRate, setHeartRate] = useState<number | null>(null);
   const [vitalsHistory, setVitalsHistory] = useState<number[]>([]);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [countryCode, setCountryCode] = useState<string>('DEFAULT');
   const [emergencyConfig, setEmergencyConfig] = useState<EmergencyConfig>(getEmergencyConfig('DEFAULT'));
   const [profile, setProfile] = useState({
     name: '',
@@ -92,118 +98,157 @@ function App() {
 
   // --- Callbacks ---
 
-  const triggerHaptic = useCallback((type: 'light' | 'medium' | 'heavy' = 'light') => {
-    if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) {
-      const patterns = { light: 10, medium: 30, heavy: 60 };
-      window.navigator.vibrate(patterns[type]);
-    }
-  }, []);
-
-  const fetchServices = useCallback(async (lat: number, lon: number, category: string) => {
-    if (!navigator.onLine) {
-      setIsOffline(true);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await axios.get('/api/emergency-services', {
-        params: { lat, lon, category, radius: 5000 }
-      });
-      if (isMounted.current) setServices(res.data.services || []);
-    } catch (err) {
-      console.error("Fetch Error:", err);
-      if (isMounted.current) setError(t('fetch_error'));
-    } finally {
-      if (isMounted.current) setLoading(false);
-    }
-  }, [t]);
-
-  const initTracking = useCallback(async () => {
-    try {
-      const res = await axios.post('/api/create-session');
-      const sid = res.data.session_id;
-      setTrackingSessionId(sid);
-      
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${API_URL.replace(/^https?:\/\//, '')}/ws/track/${sid}`;
-      
-      ws.current = new WebSocket(wsUrl);
-      ws.current.onopen = () => console.log("Tracking Connected");
-      ws.current.onclose = () => console.log("Tracking Disconnected");
-    } catch (err) {
-      console.error("Tracking Error:", err);
-    }
+  const triggerHaptic = useCallback((pattern: number | number[] = 50) => {
+    if ('vibrate' in navigator) navigator.vibrate(pattern);
   }, []);
 
   const speak = useCallback((text: string) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      window.speechSynthesis.speak(utterance);
-    }
+    if (!('speechSynthesis' in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = i18n.language;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  }, [i18n.language]);
+
+  const fetchRegionInfo = useCallback(async (lat: number, lon: number) => {
+    try {
+      const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+      const code = res.data.address.country_code.toUpperCase();
+      setCountryCode(code);
+      setEmergencyConfig(getEmergencyConfig(code));
+    } catch (e) { console.error("Region Info Error:", e); }
   }, []);
 
-  const sendAlerts = useCallback(() => {
-    if (contacts.length === 0) { setShowSettings(true); return; }
-    const loc = locationRef.current ? `https://www.google.com/maps?q=${locationRef.current.lat},${locationRef.current.lon}` : "Unknown";
-    const link = trackingSessionId ? `${window.location.origin}/?track=${trackingSessionId}` : "";
-    window.open(`sms:${contacts.join(';')}?body=${encodeURIComponent(`EMERGENCY SOS: Location: ${loc}. Track: ${link}`)}`);
-  }, [contacts, trackingSessionId]);
+  const startTracking = useCallback(async (lat: number, lon: number) => {
+    if (ws.current) return;
+    try {
+      const res = await axios.post('/api/create-session');
+      const id = res.data.session_id;
+      setTrackingSessionId(id);
+      const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
+      const wsHost = API_URL.replace(/^https?:\/\//, '');
+      const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/track/${id}`);
+      socket.onopen = () => socket.send(JSON.stringify({ lat, lon }));
+      ws.current = socket;
+      if ("geolocation" in navigator) {
+        navigator.geolocation.watchPosition(
+          (pos) => {
+            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            if (isMounted.current) setLocation(newLoc);
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ lat: pos.coords.latitude, lon: pos.coords.longitude }));
+            }
+          },
+          (err) => console.error("Tracking Error:", err),
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+        );
+      }
+    } catch (e) { console.error("Tracking Session Error:", e); }
+  }, [setLocation]);
 
-  // --- Effects ---
+  const getEmergencyServices = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    
+    const fetchWithCoords = async (lat: number, lon: number) => {
+      try {
+        fetchRegionInfo(lat, lon);
+        startTracking(lat, lon);
+        const servicesRes = await axios.get(`/api/emergency-services?lat=${lat}&lon=${lon}&radius=5000`);
+        if (isMounted.current) {
+          setServices(servicesRes.data.services);
+          localStorage.setItem('roadsos_cache', JSON.stringify(servicesRes.data.services));
+        }
+      } catch (err: any) {
+        console.error("Fetch Services Error:", err);
+        if (isMounted.current) setError(`${t('offline_notice')}`);
+      } finally {
+        if (isMounted.current) setLoading(false);
+      }
+    };
+
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+          if (isMounted.current) setLocation(newLoc);
+          fetchWithCoords(newLoc.lat, newLoc.lon);
+        },
+        (err) => {
+          const cachedLoc = locationRef.current;
+          if (cachedLoc) fetchWithCoords(cachedLoc.lat, cachedLoc.lon);
+          else if (isMounted.current) {
+            setError(err.code === 3 ? t('gps_lost') : t('location_blocked'));
+            setLoading(false);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      );
+    } else if (locationRef.current) {
+      await fetchWithCoords(locationRef.current.lat, locationRef.current.lon);
+    } else {
+      setError("Geolocation not supported");
+      setLoading(false);
+    }
+  }, [t, fetchRegionInfo, startTracking, setLocation]);
+
+  const fetchLocation = useCallback(() => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (isMounted.current) {
+            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            setLocation(newLoc);
+            fetchRegionInfo(newLoc.lat, newLoc.lon);
+          }
+        },
+        (err) => { if (isMounted.current) setError(err.code === 1 ? t('location_blocked') : t('gps_lost')); },
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+      );
+    }
+  }, [fetchRegionInfo, t, setLocation]);
+
+  const joinTrackingSession = useCallback((id: string) => {
+    const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
+    const wsHost = API_URL.replace(/^https?:\/\//, '');
+    const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/track/${id}`);
+    socket.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.lat && data.lon) {
+        setLocation({ lat: data.lat, lon: data.lon });
+        setViewMode('map');
+        setError(t('tracking_active'));
+      }
+    };
+    ws.current = socket;
+    setTrackingSessionId(id);
+  }, [t]);
 
   useEffect(() => {
     isMounted.current = true;
-    
-    // Voice Recognition Setup
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
+      setIsSupported(true);
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.lang = i18n.language;
-
       recognition.onresult = (event: any) => {
         const transcript = Array.from(event.results)
           .map((result: any) => result[0])
-          .map((result) => result.transcript)
-          .join('')
-          .toLowerCase();
-
-        if (transcript.includes('sos') || transcript.includes('help') || transcript.includes('emergency')) {
-          sendAlerts();
-          triggerHaptic('heavy');
-          speak(t('sos_triggered_voice'));
+          .map((result: any) => result.transcript)
+          .join('').toLowerCase();
+        const trigger = t('sos').toLowerCase();
+        if (transcript.includes(trigger)) {
+          triggerHaptic([500, 200, 500]);
+          getEmergencyServices();
+          speak(t('voice_sos_active'));
         }
       };
-
+      recognition.onend = () => { if (isListening) recognition.start(); };
       recognitionRef.current = recognition;
-    }
-
-    // Geolocation
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude: lat, longitude: lon } = pos.coords;
-          setLocation({ lat, lon });
-          fetchServices(lat, lon, activeCategory);
-          initTracking();
-
-          // Identify Country for Config
-          axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
-            .then(res => {
-              const code = res.data.address.country_code?.toUpperCase();
-              setEmergencyConfig(getEmergencyConfig(code));
-            })
-            .catch(() => {});
-        },
-        (err) => {
-          console.error(err);
-          setError(t('location_error'));
-        },
-        { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 }
-      );
     }
 
     const handleOnline = () => setIsOffline(false);
@@ -211,65 +256,110 @@ function App() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Load user data
     const cached = ['roadsos_cache', 'roadsos_contacts', 'roadsos_profile'].map(k => localStorage.getItem(k));
+    if (cached[0]) setServices(JSON.parse(cached[0]));
     if (cached[1]) setContacts(JSON.parse(cached[1]));
     if (cached[2]) setProfile(JSON.parse(cached[2]));
+
+    fetchLocation();
+    const trackId = new URLSearchParams(window.location.search).get('track');
+    if (trackId) joinTrackingSession(trackId);
 
     return () => {
       isMounted.current = false;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       if (ws.current) ws.current.close();
-      if (recognitionRef.current) recognitionRef.current.stop();
     };
-  }, [activeCategory, fetchServices, initTracking, t, i18n.language, triggerHaptic, speak, setLocation, sendAlerts]);
+  }, [i18n.language, t, isListening, fetchLocation, joinTrackingSession, getEmergencyServices, speak, triggerHaptic]);
 
-  useEffect(() => {
-    if (location && ws.current && ws.current.readyState === WebSocket.OPEN) {
-      ws.current.send(JSON.stringify(location));
-    }
-  }, [location]);
+  const filteredServices = useMemo(() => {
+    return services.filter(s => {
+      if (!s.category) return false;
+      if (activeCategory === 'hospital') {
+        return ['hospital', 'clinic', 'doctors', 'pharmacy', 'ambulance_station', 'healthcare'].includes(s.category);
+      }
+      if (activeCategory === 'police') {
+        return ['police', 'fire_station', 'emergency_phone'].includes(s.category);
+      }
+      if (activeCategory === 'rescue') {
+        return ['car_repair', 'motorcycle_repair', 'tyres', 'fuel', 'tow_truck', 'mechanic', 'breakdown_service', 'bicycle_repair_station', 'car', 'motorcycle'].includes(s.category);
+      }
+      return s.category === activeCategory || s.category.includes(activeCategory);
+    });
+  }, [services, activeCategory]);
 
-  // --- Handlers ---
-
-  const handleSOS = () => {
-    triggerHaptic('heavy');
-    const config = emergencyConfig;
-    const num = activeCategory === 'police' ? config.police : 
-                activeCategory === 'hospital' ? config.ambulance : config.combined || config.ambulance;
-    window.location.href = `tel:${num}`;
-  };
-
-  const toggleVoice = () => {
-    if (!isListening) {
-      recognitionRef.current?.start();
-      setIsListening(true);
-      triggerHaptic('medium');
-    } else {
+  const toggleListening = useCallback(() => {
+    triggerHaptic(50);
+    if (isListening) {
       recognitionRef.current?.stop();
       setIsListening(false);
+    } else {
+      if (recognitionRef.current) recognitionRef.current.lang = i18n.language;
+      recognitionRef.current?.start();
+      setIsListening(true);
     }
-  };
+  }, [isListening, triggerHaptic, i18n.language]);
 
-  const startVitalsMonitor = useCallback(async () => {
+  const handleCall = useCallback((phone: string) => { triggerHaptic(20); window.open(`tel:${phone}`); }, [triggerHaptic]);
+  const handleExternalMap = useCallback((lat: number, lon: number) => { triggerHaptic(20); window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`); }, [triggerHaptic]);
+  
+  const handleNavigate = useCallback(async (service: Service) => {
+    triggerHaptic(50);
+    setSelectedService(service);
+    if (location) {
+      try {
+        const res = await axios.get(`https://router.project-osrm.org/route/v1/driving/${location.lon},${location.lat};${service.lon},${service.lat}?overview=full&geometries=geojson`);
+        const coords = res.data.routes[0].geometry.coordinates.map((c: any) => [c[1], c[0]]);
+        setRouteCoordinates(coords);
+        setViewMode('map');
+      } catch (e) { console.error("Routing Error:", e); }
+    }
+  }, [location, triggerHaptic]);
+
+  const shareTrackingLink = useCallback(() => {
+    if (!trackingSessionId) return;
+    const link = `${window.location.origin}/?track=${trackingSessionId}`;
+    navigator.clipboard.writeText(link);
+    triggerHaptic(50);
+    // Use a simple state for visual feedback if needed
+  }, [trackingSessionId, triggerHaptic]);
+
+  const toggleVitalsMonitoring = useCallback(async () => {
     if (isMonitoringVitals) {
       setIsMonitoringVitals(false);
+      setHeartRate(null);
+      setVitalsHistory([]);
       return;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
       setIsMonitoringVitals(true);
-      triggerHaptic('medium');
-      
-      // Heart rate simulation (POC)
+      triggerHaptic(50);
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.play();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const samples: number[] = [];
       let lastTime = Date.now();
       const processFrame = () => {
-        if (!isMounted.current) return;
-        const now = Date.now();
-        if (now - lastTime > 1000) {
-          if (Math.random() > 0.3) {
-            const bpm = 65 + Math.floor(Math.random() * 15);
+        if (!isMounted.current || !stream.active) return;
+        if (video.readyState === video.HAVE_ENOUGH_DATA && ctx) {
+          canvas.width = 100; canvas.height = 100;
+          ctx.drawImage(video, 25, 25, 50, 50, 0, 0, 100, 100);
+          const data = ctx.getImageData(0, 0, 100, 100).data;
+          let greenSum = 0;
+          for (let i = 1; i < data.length; i += 4) greenSum += data[i];
+          samples.push(greenSum / (data.length / 4));
+          if (samples.length > 150) samples.shift();
+          const now = Date.now();
+          if (now - lastTime > 2000 && samples.length > 60) {
+            let peaks = 0; const mean = samples.reduce((a, b) => a + b) / samples.length;
+            for (let i = 1; i < samples.length - 1; i++) {
+              if (samples[i] > mean + 0.2 && samples[i] > samples[i-1] && samples[i] > samples[i+1]) peaks++;
+            }
+            const bpm = Math.round((peaks * 60) / (samples.length / 30));
             if (bpm > 40 && bpm < 180) { setHeartRate(bpm); setVitalsHistory(prev => [...prev.slice(-20), bpm]); }
             lastTime = now;
           }
@@ -278,14 +368,21 @@ function App() {
         else stream.getTracks().forEach(t => t.stop());
       };
       requestAnimationFrame(processFrame);
-    } catch (err) {
+    } catch (err) { 
       console.error("Vitals Monitor Error:", err);
-      setError(t('camera_blocked'));
+      setError(t('camera_blocked')); 
     }
   }, [isMonitoringVitals, triggerHaptic, t]);
 
   const saveProfile = (p: any) => { setProfile(p); localStorage.setItem('roadsos_profile', JSON.stringify(p)); };
   const saveContacts = (c: string[]) => { setContacts(c); localStorage.setItem('roadsos_contacts', JSON.stringify(c)); };
+  
+  const sendAlerts = () => {
+    if (contacts.length === 0) { setShowSettings(true); return; }
+    const loc = location ? `https://www.google.com/maps?q=${location.lat},${location.lon}` : "Unknown";
+    const link = trackingSessionId ? `${window.location.origin}/?track=${trackingSessionId}` : "";
+    window.open(`sms:${contacts.join(';')}?body=${encodeURIComponent(`EMERGENCY SOS: Location: ${loc}. Track: ${link}`)}`);
+  };
 
   return (
     <div className="app-container">
@@ -297,42 +394,63 @@ function App() {
           </motion.div>
         )}
       </AnimatePresence>
-
+      
       <header>
         <div className="header-titles">
-          <h1>{t('app_name')}</h1>
+          <h1>ROADSoS <span style={{ fontSize: '0.6rem', background: 'var(--primary-red)', padding: '2px 6px', borderRadius: '4px' }}>{countryCode}</span></h1>
         </div>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <ThemeToggle />
+        
+        {/* Mobile Menu Toggle */}
+        <button className="theme-toggle mobile-only" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+          {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+
+        {/* Desktop Navigation */}
+        <div className="desktop-nav">
+          {isSupported && (
+            <button className="theme-toggle" onClick={toggleListening} style={{ color: isListening ? 'var(--primary-red)' : 'inherit', animation: isSpeaking ? 'pulse 1s infinite' : 'none' }}>
+              {isListening ? <Mic size={20} /> : <MicOff size={20} />}
+            </button>
+          )}
+          <button className="theme-toggle" onClick={toggleVitalsMonitoring} style={{ color: isMonitoringVitals ? 'var(--primary-red)' : 'inherit' }}><Activity size={20} /></button>
           <button className="theme-toggle" onClick={() => setShowSettings(true)}><User size={20} /></button>
-          <button className="theme-toggle mobile-only" onClick={() => setIsMenuOpen(true)}><Menu size={20} /></button>
+          <ThemeToggle />
         </div>
       </header>
 
+      {/* Mobile Menu Overlay */}
       <AnimatePresence>
         {isMenuOpen && (
-          <motion.div className="mobile-menu-overlay" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}>
+          <motion.div 
+            className="mobile-menu-overlay"
+            initial={{ opacity: 0, x: '100%' }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+          >
             <div className="mobile-menu-content">
-              <div style={{ padding: '2rem', display: 'flex', justifyContent: 'flex-end' }}>
-                <button className="theme-toggle" onClick={() => setIsMenuOpen(false)}><X size={32} /></button>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '1rem' }}>
+                <button className="theme-toggle" onClick={() => setIsMenuOpen(false)}><X size={24} /></button>
               </div>
               <nav className="mobile-nav-links">
+                {isSupported && (
+                  <button className="mobile-nav-item" onClick={() => { toggleListening(); setIsMenuOpen(false); }}>
+                    {isListening ? <Mic size={24} color="var(--primary-red)" /> : <MicOff size={24} />}
+                    <span>Voice SOS</span>
+                  </button>
+                )}
+                <button className="mobile-nav-item" onClick={() => { toggleVitalsMonitoring(); setIsMenuOpen(false); }}>
+                  <Activity size={24} color={isMonitoringVitals ? 'var(--primary-red)' : 'inherit'} />
+                  <span>Vitals Monitor</span>
+                </button>
                 <button className="mobile-nav-item" onClick={() => { setShowSettings(true); setIsMenuOpen(false); }}>
                   <User size={24} />
-                  <span>{t('profile')}</span>
+                  <span>Settings</span>
                 </button>
-                <button className="mobile-nav-item" onClick={() => { setIsMenuOpen(false); startVitalsMonitor(); }}>
-                  <Activity size={24} />
-                  <span>{t('vitals')}</span>
-                </button>
-                <button className="mobile-nav-item" onClick={() => { setIsMenuOpen(false); toggleVoice(); }}>
-                  {isListening ? <MicOff size={24} /> : <Mic size={24} />}
-                  <span>{isListening ? t('disable_voice') : t('enable_voice')}</span>
-                </button>
-                <button className="mobile-nav-item" onClick={() => { setIsMenuOpen(false); sendAlerts(); }}>
-                  <MessageSquare size={24} />
-                  <span>{t('send_alerts')}</span>
-                </button>
+                <div className="mobile-nav-item" onClick={() => setIsMenuOpen(false)}>
+                  <ThemeToggle />
+                  <span>Appearance</span>
+                </div>
               </nav>
             </div>
           </motion.div>
@@ -340,94 +458,95 @@ function App() {
       </AnimatePresence>
 
       <main className="main-content">
+        {error && <div className="error-banner"><AlertTriangle size={18} /><span>{error}</span></div>}
+
         <div className="sos-section">
           <div className="sos-button-wrapper">
-            <motion.div className="sos-ripple" animate={{ scale: [1, 1.5], opacity: [0.5, 0] }} transition={{ duration: 2, repeat: Infinity }} />
-            <button className="sos-button" onClick={handleSOS}>
-              <AlertTriangle size={48} style={{ marginBottom: '8px' }} />
-              SOS
+            {!loading && <motion.div className="sos-ripple" initial={{ scale: 1, opacity: 0.8 }} animate={{ scale: 1.8, opacity: 0 }} transition={{ repeat: Infinity, duration: 2, ease: "easeOut" }} />}
+            <motion.button className={`sos-button ${loading ? 'loading' : ''}`} onClick={() => { triggerHaptic([100, 50, 100]); getEmergencyServices(); }} disabled={loading} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.9 }}>
+              <AlertTriangle size={32} fill="white" /><span style={{ fontSize: '0.7rem', marginTop: 4 }}>{loading ? t('syncing') : t('sos')}</span>
+            </motion.button>
+          </div>
+        </div>
+
+        <button className="btn btn-call" style={{ width: '100%', marginBottom: '1rem', borderRadius: '14px', padding: '15px', fontSize: '1rem' }} onClick={() => window.open(`tel:${emergencyConfig.combined || emergencyConfig.police}`)}>
+          <Phone size={20} /> CALL LOCAL AUTHORITIES ({emergencyConfig.combined || emergencyConfig.police})
+        </button>
+
+        {contacts.length > 0 && (
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem' }}>
+            <button className="btn btn-nav" style={{ flex: 1, borderRadius: '14px', padding: '12px' }} onClick={sendAlerts}>
+              <MessageSquare size={18} /> {t('alert_contacts')}
             </button>
+            {trackingSessionId && (
+              <button className="btn btn-nav" style={{ flex: 1, borderRadius: '14px', padding: '12px' }} onClick={shareTrackingLink}>
+                <ExternalLink size={18} /> {t('share_live')}
+              </button>
+            )}
           </div>
-        </div>
+        )}
 
-        <div className="category-bar">
-          {CATEGORIES.map(cat => (
-            <div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => { setActiveCategory(cat.id); location && fetchServices(location.lat, location.lon, cat.id); }}>
-              <cat.icon size={18} />
-              <span>{t(cat.label)}</span>
+        {isMonitoringVitals && (
+          <motion.div className="first-aid-card vitals-card" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} style={{ borderLeftColor: '#ff3b30', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ color: '#ff3b30', margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}><Activity size={18} /> {t('vitals_monitor')}</h3>
+              <div className="vitals-live-tag">{t('live_rppg')}</div>
             </div>
-          ))}
-          <div className={`category-item ${activeCategory === 'vitals' ? 'active' : ''}`} onClick={() => setActiveCategory('vitals')}>
-            <Activity size={18} />
-            <span>{t('vitals')}</span>
-          </div>
-        </div>
-
-        <div className="content-area">
-          {activeCategory === 'vitals' ? (
-            <div className="vitals-monitor">
-              <div className="service-card vitals-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                  <h3>{t('vitals_monitor')}</h3>
-                  <Zap size={20} color={isMonitoringVitals ? "var(--primary-red)" : "gray"} />
-                </div>
-                {!isMonitoringVitals ? (
-                  <div style={{ textAlign: 'center', padding: '2rem' }}>
-                    <p style={{ marginBottom: '1.5rem', opacity: 0.7 }}>{t('vitals_description')}</p>
-                    <button className="btn btn-call" onClick={startVitalsMonitor}>{t('start_monitoring')}</button>
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-                      <div className="bpm-value">{heartRate || '--'} <span style={{ fontSize: '1rem' }}>BPM</span></div>
-                      <p style={{ opacity: 0.5 }}>{t('keep_steady')}</p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'flex-end', height: '60px', gap: '2px', background: 'var(--input-bg)', borderRadius: '8px', padding: '4px' }}>
-                      {vitalsHistory.map((v, i) => (
-                        <div key={i} style={{ flex: 1, background: 'var(--primary-red)', height: `${(v / 180) * 100}%`, borderRadius: '2px' }} />
-                      ))}
-                    </div>
-                  </div>
-                )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', padding: '10px 0' }}>
+              <div className="hr-display">
+                <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 0.8 }}><Heart size={32} fill="#ff3b30" color="#ff3b30" /></motion.div>
+                <div style={{ textAlign: 'center' }}><span className="bpm-value">{heartRate || '--'}</span><span className="bpm-label">BPM</span></div>
+              </div>
+              <div className="vitals-graph">
+                {vitalsHistory.map((h, i) => <motion.div key={i} className="graph-bar" initial={{ height: 0 }} animate={{ height: `${(h / 150) * 100}%` }} style={{ background: h > 100 ? '#ff3b30' : '#34c759' }} />)}
               </div>
             </div>
-          ) : activeCategory === 'firstaid' ? (
-            <div className="first-aid-section">
+            <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '1rem' }}><Zap size={10} /> {t('vitals_detail')}</p>
+          </motion.div>
+        )}
+
+        <div className="category-bar">
+          {CATEGORIES.map((cat, idx) => (
+            <motion.div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => { triggerHaptic(10); setActiveCategory(cat.id); }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
+              <cat.icon size={18} />{t(cat.label)}
+            </motion.div>
+          ))}
+        </div>
+
+        {activeCategory !== 'firstaid' && (
+          <div className="view-toggle">
+            <button className={`toggle-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')}><List size={16} /> {t('list')}</button>
+            <button className={`toggle-btn ${viewMode === 'map' ? 'active' : ''}`} onClick={() => setViewMode('map')}><MapIcon size={16} /> {t('map')}</button>
+          </div>
+        )}
+
+        <div className="content-area">
+          {activeCategory === 'firstaid' ? (
+            <div className="first-aid-list">
+              <h2 style={{ marginBottom: '1rem' }}>{t('first_aid_title')}</h2>
               {FIRST_AID_DATA.map((item, idx) => (
-                <motion.div key={idx} className="service-card" style={{ marginBottom: '1rem', padding: '1.5rem' }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
-                  <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--primary-red)', marginBottom: '1rem' }}>
-                    <AlertTriangle size={20} /> {item.title}
-                  </h3>
-                  <ul style={{ paddingLeft: '1.2rem', margin: 0 }}>
-                    {item.steps.map((step, sIdx) => <li key={sIdx} style={{ marginBottom: '0.5rem', opacity: 0.8 }}>{step}</li>)}
-                  </ul>
-                </motion.div>
+                <div key={idx} className="first-aid-card">
+                  <h4>{item.title}</h4><p style={{ fontSize: '0.8rem', opacity: 0.8 }}>{item.scenario}</p>
+                  <ol className="first-aid-steps">{item.steps.map((step, sIdx) => <li key={sIdx}>{step}</li>)}</ol>
+                </div>
               ))}
             </div>
           ) : (
             <div className="services-container">
-              <div className="view-toggle">
-                <button className={`toggle-btn ${viewMode === 'list' ? 'active' : ''}`} onClick={() => setViewMode('list')}><List size={18} /> {t('list_view')}</button>
-                <button className={`toggle-btn ${viewMode === 'map' ? 'active' : ''}`} onClick={() => setViewMode('map')}><MapIcon size={18} /> {t('map_view')}</button>
-              </div>
-
               <div className={`service-list-section ${viewMode === 'map' ? 'mobile-hidden' : ''}`}>
-                {loading && <div className="loading-spinner">Searching {activeCategory}...</div>}
-                {error && <div className="error-notice">{error}</div>}
                 <AnimatePresence mode="popLayout">
-                  {services.length > 0 ? (
-                    services.map((svc, idx) => (
-                      <ServiceCard 
-                        key={svc.id} 
-                        service={svc} 
-                        idx={idx}
-                        t={t}
-                        onCall={(num) => window.location.href = `tel:${num}`}
-                        onNavigate={(s) => setRouteCoordinates([[location!.lat, location!.lon], [s.lat, s.lon]])}
-                        onExternalMap={(lat, lon) => window.open(`https://www.google.com/maps?q=${lat},${lon}`)}
-                      />
-                    ))
-                  ) : !loading && (
+                  {filteredServices.length > 0 ? filteredServices.map((service, idx) => (
+                    <ServiceCard 
+                      key={service.id} 
+                      service={service} 
+                      idx={idx} 
+                      t={t} 
+                      selectedServiceId={selectedService?.id} 
+                      onCall={handleCall} 
+                      onNavigate={handleNavigate} 
+                      onExternalMap={handleExternalMap} 
+                    />
+                  )) : (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.5 }} style={{ textAlign: 'center', marginTop: '3rem' }}><p>{t('nearby_services')}</p><p>{t('refresh_data')}</p></motion.div>
                   )}
                 </AnimatePresence>
@@ -444,57 +563,43 @@ function App() {
         </div>
       </main>
 
-      <AnimatePresence>
-        {showSettings && (
-          <motion.div 
-            className="settings-overlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={(e) => { if (e.target === e.currentTarget) setShowSettings(false); }}
-          >
-            <motion.div 
-              className="settings-modal"
-              initial={{ y: 50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 50, opacity: 0 }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                <h2>{t('settings')}</h2><button className="theme-toggle" onClick={() => setShowSettings(false)}><X size={20} /></button>
-              </div>
-              <div className="settings-scroll-area">
-                <section className="settings-section">
-                  <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>Language / भाषा</h3>
-                  <select className="contact-input" value={i18n.language} onChange={(e) => i18n.changeLanguage(e.target.value)}>
-                    <optgroup label="Global Languages">
-                      <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option>
-                    </optgroup>
-                    <optgroup label="Indian Scheduled Languages">
-                      <option value="hi">हिन्दी (Hindi)</option><option value="as">অসমীয়া (Assamese)</option><option value="bn">বাংলা (Bengali)</option><option value="brx">बर' (Bodo)</option><option value="doi">डोगरी (Dogri)</option><option value="gu">ગુજરાતી (Gujarati)</option><option value="kn">કನ್ನಡ (Kannada)</option><option value="ks">کٲشُر (Kashmiri)</option><option value="kok">कोंकणी (Konkani)</option><option value="mai">मैथिली (Maithili)</option><option value="ml">മലയാളം (Malayalam)</option><option value="mni">মৈতৈলোন (Manipuri)</option><option value="mr">মারাঠি (Marathi)</option><option value="ne">नेपाली (Nepali)</option><option value="or">ଓଡ଼ିଆ (Odia)</option><option value="pa">ਪੰਜਾਬੀ (Punjabi)</option><option value="sa">संस्कृतम् (Sanskrit)</option><option value="sat">संताली (Santali)</option><option value="sd">सिंधी (Sindhi)</option><option value="ta">தமிழ் (Tamil)</option><option value="te">తెలుగు (Telugu)</option><option value="ur">اردو (Urdu)</option>
-                    </optgroup>
-                  </select>
-                </section>
-                <section className="settings-section" style={{ marginTop: '1.5rem' }}>
-                  <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>{t('personal_details')}</h3>
-                  <input type="text" placeholder={t('full_name')} className="contact-input" value={profile.name} onChange={(e) => saveProfile({...profile, name: e.target.value})} />
-                  <select className="contact-input" value={profile.bloodGroup} onChange={(e) => saveProfile({...profile, bloodGroup: e.target.value})}>
-                    <option value="">{t('blood_group')}</option>{['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => <option key={bg} value={bg}>{bg}</option>)}
-                  </select>
-                  <textarea placeholder={t('medical_notes')} className="contact-input" rows={3} value={profile.medicalNotes} onChange={(e) => saveProfile({...profile, medicalNotes: e.target.value})} style={{ resize: 'none' }} />
-                </section>
-                <section className="settings-section" style={{ marginTop: '1.5rem' }}>
-                  <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem', color: 'var(--primary-red)' }}>{t('contacts')}</h3>
-                  {[0, 1, 2].map(idx => (
-                    <input key={idx} type="tel" placeholder={`Contact ${idx + 1}`} className="contact-input" value={contacts[idx] || ''} onChange={(e) => { const newC = [...contacts]; newC[idx] = e.target.value; saveContacts(newC.filter(c => c !== '')); }} />
-                  ))}
-                </section>
-              </div>
-              <div className="modal-actions" style={{ marginTop: '1.5rem' }}><button className="btn btn-call" style={{ width: '100%' }} onClick={() => setShowSettings(false)}>{t('save_close')}</button></div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+      {showSettings && (
+        <div className="settings-overlay">
+          <div className="settings-modal">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2>{t('settings')}</h2><button className="theme-toggle" onClick={() => setShowSettings(false)}><X size={20} /></button>
+            </div>
+            <div className="settings-scroll-area">
+              <section className="settings-section">
+                <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>Language / भाषा</h3>
+                <select className="contact-input" value={i18n.language} onChange={(e) => i18n.changeLanguage(e.target.value)}>
+                  <optgroup label="Global Languages">
+                    <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option>
+                  </optgroup>
+                  <optgroup label="Indian Scheduled Languages">
+                    <option value="hi">हिन्दी (Hindi)</option><option value="as">অসমীয়া (Assamese)</option><option value="bn">বাংলা (Bengali)</option><option value="brx">बर' (Bodo)</option><option value="doi">डोगरी (Dogri)</option><option value="gu">ગુજરાતી (Gujarati)</option><option value="kn">ಕನ್ನಡ (Kannada)</option><option value="ks">کٲشُر (Kashmiri)</option><option value="kok">कोंकणी (Konkani)</option><option value="mai">मैथिली (Maithili)</option><option value="ml">മലയാളം (Malayalam)</option><option value="mni">মৈতৈলোন (Manipuri)</option><option value="mr">मराठी (Marathi)</option><option value="ne">नेपाली (Nepali)</option><option value="or">ଓଡ଼ିଆ (Odia)</option><option value="pa">ਪੰਜਾਬੀ (Punjabi)</option><option value="sa">संस्कृतम् (Sanskrit)</option><option value="sat">संताली (Santali)</option><option value="sd">सिंधी (Sindhi)</option><option value="ta">தமிழ் (Tamil)</option><option value="te">తెలుగు (Telugu)</option><option value="ur">اردो (Urdu)</option>
+                  </optgroup>
+                </select>
+              </section>
+              <section className="settings-section" style={{ marginTop: '1.5rem' }}>
+                <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>{t('personal_details')}</h3>
+                <input type="text" placeholder={t('full_name')} className="contact-input" value={profile.name} onChange={(e) => saveProfile({...profile, name: e.target.value})} />
+                <select className="contact-input" value={profile.bloodGroup} onChange={(e) => saveProfile({...profile, bloodGroup: e.target.value})}>
+                  <option value="">{t('blood_group')}</option>{['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => <option key={bg} value={bg}>{bg}</option>)}
+                </select>
+                <textarea placeholder={t('medical_notes')} className="contact-input" rows={3} value={profile.medicalNotes} onChange={(e) => saveProfile({...profile, medicalNotes: e.target.value})} style={{ resize: 'none' }} />
+              </section>
+              <section className="settings-section" style={{ marginTop: '1.5rem' }}>
+                <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem', color: 'var(--primary-red)' }}>{t('contacts')}</h3>
+                {[0, 1, 2].map(idx => (
+                  <input key={idx} type="tel" placeholder={`Contact ${idx + 1}`} className="contact-input" value={contacts[idx] || ''} onChange={(e) => { const newC = [...contacts]; newC[idx] = e.target.value; saveContacts(newC.filter(c => c !== '')); }} />
+                ))}
+              </section>
+            </div>
+            <div className="modal-actions" style={{ marginTop: '1.5rem' }}><button className="btn btn-call" style={{ width: '100%' }} onClick={() => setShowSettings(false)}>{t('save_close')}</button></div>
+          </div>
+        </div>
+      )}
       <footer style={{ textAlign: 'center', padding: '2rem', fontSize: '0.7rem', opacity: 0.5 }}>ROADSoS GLOBAL EMERGENCY NETWORK © 2026</footer>
     </div>
   );
