@@ -6,12 +6,14 @@ interface Service {
   id: number;
   name: string;
   category: string;
+  type?: string;
   phone?: string;
   address?: string;
   lat: number;
   lon: number;
   image?: string;
   opening_hours?: string;
+  is_recommended?: boolean;
 }
 
 interface ServiceCardProps {
@@ -49,6 +51,17 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
         {!service.image && <ImageIcon size={32} opacity={0.3} />}
       </div>
       <div className="service-details">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '0.5rem' }}>
+          {service.type === 'trauma_center' && (
+            <span className="badge trauma-badge">{t('trauma_center')}</span>
+          )}
+          {service.is_recommended && (
+            <span className="badge recommended-badge">{t('recommended')}</span>
+          )}
+          {service.type === 'showroom' && (
+            <span className="badge showroom-badge">{t('showroom')}</span>
+          )}
+        </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <h3>{service.name}</h3>
           <button className="copy-btn" onClick={handleCopy}>

@@ -18,8 +18,8 @@ import {
   Mic,
   MicOff,
   Activity,
-  Zap,
-  ExternalLink
+  ExternalLink,
+  ClipboardCheck
 } from 'lucide-react';
 import { FIRST_AID_DATA } from './data/firstAid';
 import { getEmergencyConfig } from './data/emergencyNumbers';
@@ -40,6 +40,7 @@ interface Service {
   id: number;
   name: string;
   category: string;
+  type?: string;
   phone?: string;
   website?: string;
   address?: string;
@@ -74,6 +75,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [showSettings, setShowSettings] = useState(false);
+  const [showBystanderChecklist, setShowBystanderChecklist] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [contacts, setContacts] = useState<string[]>([]);
   const [trackingSessionId, setTrackingSessionId] = useState<string | null>(null);
@@ -84,7 +86,6 @@ function App() {
   const [isMonitoringVitals, setIsMonitoringVitals] = useState(false);
   const [heartRate, setHeartRate] = useState<number | null>(null);
   const [vitalsHistory, setVitalsHistory] = useState<number[]>([]);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [countryCode, setCountryCode] = useState<string>('DEFAULT');
   const [emergencyConfig, setEmergencyConfig] = useState<EmergencyConfig>(getEmergencyConfig('DEFAULT'));
   const [profile, setProfile] = useState({
@@ -107,8 +108,6 @@ function App() {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = i18n.language;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
     window.speechSynthesis.speak(utterance);
   }, [i18n.language]);
 
@@ -148,9 +147,10 @@ function App() {
     } catch (e) { console.error("Tracking Session Error:", e); }
   }, [setLocation]);
 
-  const getEmergencyServices = useCallback(async () => {
+  const getEmergencyServices = useCallback(async (silent = false) => {
     setLoading(true);
     setError(null);
+    if (!silent) setShowBystanderChecklist(true);
     
     const fetchWithCoords = async (lat: number, lon: number) => {
       try {
@@ -224,7 +224,7 @@ function App() {
     };
     ws.current = socket;
     setTrackingSessionId(id);
-  }, [t]);
+  }, [t, setLocation]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -238,7 +238,7 @@ function App() {
       recognition.onresult = (event: any) => {
         const transcript = Array.from(event.results)
           .map((result: any) => result[0])
-          .map((result: any) => result.transcript)
+          .map((result) => result.transcript)
           .join('').toLowerCase();
         const trigger = t('sos').toLowerCase();
         if (transcript.includes(trigger)) {
@@ -322,7 +322,6 @@ function App() {
     const link = `${window.location.origin}/?track=${trackingSessionId}`;
     navigator.clipboard.writeText(link);
     triggerHaptic(50);
-    // Use a simple state for visual feedback if needed
   }, [trackingSessionId, triggerHaptic]);
 
   const toggleVitalsMonitoring = useCallback(async () => {
@@ -384,6 +383,15 @@ function App() {
     window.open(`sms:${contacts.join(';')}?body=${encodeURIComponent(`EMERGENCY SOS: Location: ${loc}. Track: ${link}`)}`);
   };
 
+  const copyCurrentLocation = () => {
+    if (location) {
+      const loc = `${location.lat}, ${location.lon}`;
+      navigator.clipboard.writeText(loc);
+      triggerHaptic(20);
+      alert(t('location_copied'));
+    }
+  };
+
   return (
     <div className="app-container">
       {isOffline && <div className="offline-notice">{t('offline_notice')}</div>}
@@ -400,15 +408,13 @@ function App() {
           <h1>ROADSoS <span style={{ fontSize: '0.6rem', background: 'var(--primary-red)', padding: '2px 6px', borderRadius: '4px' }}>{countryCode}</span></h1>
         </div>
         
-        {/* Mobile Menu Toggle */}
         <button className="theme-toggle mobile-only" onClick={() => setIsMenuOpen(!isMenuOpen)}>
           {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
 
-        {/* Desktop Navigation */}
         <div className="desktop-nav">
           {isSupported && (
-            <button className="theme-toggle" onClick={toggleListening} style={{ color: isListening ? 'var(--primary-red)' : 'inherit', animation: isSpeaking ? 'pulse 1s infinite' : 'none' }}>
+            <button className="theme-toggle" onClick={toggleListening} style={{ color: isListening ? 'var(--primary-red)' : 'inherit' }}>
               {isListening ? <Mic size={20} /> : <MicOff size={20} />}
             </button>
           )}
@@ -418,16 +424,9 @@ function App() {
         </div>
       </header>
 
-      {/* Mobile Menu Overlay */}
       <AnimatePresence>
         {isMenuOpen && (
-          <motion.div 
-            className="mobile-menu-overlay"
-            initial={{ opacity: 0, x: '100%' }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-          >
+          <motion.div className="mobile-menu-overlay" initial={{ opacity: 0, x: '100%' }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}>
             <div className="mobile-menu-content">
               <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '1rem' }}>
                 <button className="theme-toggle" onClick={() => setIsMenuOpen(false)}><X size={24} /></button>
@@ -445,7 +444,7 @@ function App() {
                 </button>
                 <button className="mobile-nav-item" onClick={() => { setShowSettings(true); setIsMenuOpen(false); }}>
                   <User size={24} />
-                  <span>Settings</span>
+                  <span>{t('settings')}</span>
                 </button>
                 <div className="mobile-nav-item" onClick={() => setIsMenuOpen(false)}>
                   <ThemeToggle />
@@ -501,13 +500,12 @@ function App() {
                 {vitalsHistory.map((h, i) => <motion.div key={i} className="graph-bar" initial={{ height: 0 }} animate={{ height: `${(h / 150) * 100}%` }} style={{ background: h > 100 ? '#ff3b30' : '#34c759' }} />)}
               </div>
             </div>
-            <p style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '1rem' }}><Zap size={10} /> {t('vitals_detail')}</p>
           </motion.div>
         )}
 
         <div className="category-bar">
           {CATEGORIES.map((cat, idx) => (
-            <motion.div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => { triggerHaptic(10); setActiveCategory(cat.id); }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
+            <motion.div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => { triggerHaptic(10); setActiveCategory(cat.id); if (cat.id !== 'firstaid' && location) getEmergencyServices(true); }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
               <cat.icon size={18} />{t(cat.label)}
             </motion.div>
           ))}
@@ -546,7 +544,7 @@ function App() {
                       onNavigate={handleNavigate} 
                       onExternalMap={handleExternalMap} 
                     />
-                  )) : (
+                  )) : !loading && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 0.5 }} style={{ textAlign: 'center', marginTop: '3rem' }}><p>{t('nearby_services')}</p><p>{t('refresh_data')}</p></motion.div>
                   )}
                 </AnimatePresence>
@@ -563,8 +561,36 @@ function App() {
         </div>
       </main>
 
+      {/* BYSTANDER CHECKLIST MODAL */}
+      <AnimatePresence>
+        {showBystanderChecklist && (
+          <div className="settings-overlay" onClick={(e) => e.target === e.currentTarget && setShowBystanderChecklist(false)}>
+            <motion.div className="settings-modal" initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h2 style={{ color: 'var(--primary-red)', display: 'flex', alignItems: 'center', gap: '10px' }}><ClipboardCheck size={24} /> {t('bystander_checklist')}</h2>
+                <button className="theme-toggle" onClick={() => setShowBystanderChecklist(false)}><X size={20} /></button>
+              </div>
+              <div className="settings-scroll-area">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div className="first-aid-card" style={{ borderLeftColor: '#34c759' }}>{t('step_1_safety')}</div>
+                  <div className="first-aid-card" style={{ borderLeftColor: '#ffcc00' }}>{t('step_2_assess')}</div>
+                  <div className="first-aid-card" style={{ borderLeftColor: '#007aff' }}>
+                    <p style={{ marginBottom: '10px' }}>{t('step_3_location')}</p>
+                    <div style={{ background: 'var(--input-bg)', padding: '10px', borderRadius: '8px', fontSize: '0.8rem', fontFamily: 'monospace', marginBottom: '10px' }}>
+                      {location ? `${location.lat.toFixed(5)}, ${location.lon.toFixed(5)}` : "Detecting..."}
+                    </div>
+                    <button className="btn btn-nav" onClick={copyCurrentLocation} style={{ fontSize: '0.8rem', padding: '8px' }}><MessageSquare size={14} /> {t('copy_location')}</button>
+                  </div>
+                </div>
+              </div>
+              <button className="btn btn-call" style={{ marginTop: '1.5rem' }} onClick={() => setShowBystanderChecklist(false)}>{t('save_close')}</button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {showSettings && (
-        <div className="settings-overlay">
+        <div className="settings-overlay" onClick={(e) => e.target === e.currentTarget && setShowSettings(false)}>
           <div className="settings-modal">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
               <h2>{t('settings')}</h2><button className="theme-toggle" onClick={() => setShowSettings(false)}><X size={20} /></button>
@@ -577,7 +603,7 @@ function App() {
                     <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option>
                   </optgroup>
                   <optgroup label="Indian Scheduled Languages">
-                    <option value="hi">हिन्दी (Hindi)</option><option value="as">অসমীয়া (Assamese)</option><option value="bn">বাংলা (Bengali)</option><option value="brx">बर' (Bodo)</option><option value="doi">डोगरी (Dogri)</option><option value="gu">ગુજરાતી (Gujarati)</option><option value="kn">ಕನ್ನಡ (Kannada)</option><option value="ks">کٲشُر (Kashmiri)</option><option value="kok">कोंकणी (Konkani)</option><option value="mai">मैथिली (Maithili)</option><option value="ml">മലയാളം (Malayalam)</option><option value="mni">মৈতৈলোন (Manipuri)</option><option value="mr">मराठी (Marathi)</option><option value="ne">नेपाली (Nepali)</option><option value="or">ଓଡ଼ିଆ (Odia)</option><option value="pa">ਪੰਜਾਬੀ (Punjabi)</option><option value="sa">संस्कृतम् (Sanskrit)</option><option value="sat">संताली (Santali)</option><option value="sd">सिंधी (Sindhi)</option><option value="ta">தமிழ் (Tamil)</option><option value="te">తెలుగు (Telugu)</option><option value="ur">اردो (Urdu)</option>
+                    <option value="hi">हिन्दी (Hindi)</option><option value="as">অসমীয়া (Assamese)</option><option value="bn">বাংলা (Bengali)</option><option value="brx">बर' (Bodo)</option><option value="doi">डोगरी (Dogri)</option><option value="gu">ગુજરાતી (Gujarati)</option><option value="kn">ಕನ್ನಡ (Kannada)</option><option value="ks">कٲशُر (Kashmiri)</option><option value="kok">कोंकणी (Konkani)</option><option value="mai">मैथिली (Maithili)</option><option value="ml">മലയാളം (Malayalam)</option><option value="mni">মৈতৈলোন (Manipuri)</option><option value="mr">मराठी (Marathi)</option><option value="ne">नेपाली (Nepali)</option><option value="or">ଓଡ଼ିଆ (Odia)</option><option value="pa">ਪੰਜਾਬੀ (Punjabi)</option><option value="sa">संस्कृतम् (Sanskrit)</option><option value="sat">संताली (Santali)</option><option value="sd">सिंधी (Sindhi)</option><option value="ta">தமிழ் (Tamil)</option><option value="te">తెలుగు (Telugu)</option><option value="ur">اردो (Urdu)</option>
                   </optgroup>
                 </select>
               </section>

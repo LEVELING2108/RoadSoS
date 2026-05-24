@@ -426,6 +426,40 @@ button:focus-visible, a:focus-visible {
 }
 
 /* VITALS MONITOR */
+/* BADGES */
+.badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 100px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.trauma-badge {
+  background: var(--primary-red);
+  color: white;
+  animation: pulse-red 2s infinite;
+}
+
+.recommended-badge {
+  background: rgba(255, 59, 48, 0.1);
+  color: var(--primary-red);
+  border: 1px solid var(--primary-red);
+}
+
+.showroom-badge {
+  background: var(--card-border);
+  color: var(--text-main);
+  opacity: 0.8;
+}
+
+@keyframes pulse-red {
+  0% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(255, 59, 48, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 59, 48, 0); }
+}
+
 .vitals-card {
   padding: clamp(1rem, 4vw, 1.5rem);
 }
