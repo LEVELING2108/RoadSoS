@@ -514,7 +514,7 @@ function App() {
 
         <div className="category-bar">
           {CATEGORIES.map((cat, idx) => (
-            <motion.div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => { triggerHaptic(10); setActiveCategory(cat.id); if (cat.id !== 'firstaid' && location) getEmergencyServices(); }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
+            <motion.div key={cat.id} className={`category-item ${activeCategory === cat.id ? 'active' : ''}`} onClick={() => { triggerHaptic(10); setActiveCategory(cat.id); }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
               <cat.icon size={18} />{t(cat.label)}
             </motion.div>
           ))}
