@@ -27,11 +27,12 @@ http_client = httpx.AsyncClient(
 async def lifespan(app: FastAPI):
     # Startup: client is already initialized
     # Test redis connection
+    logging.info(f"Attempting to connect to Redis at: {REDIS_URL}")
     try:
         await redis_client.ping()
-        logging.info("Connected to Redis")
+        logging.info(f"Successfully connected to Redis at {REDIS_URL}")
     except Exception as e:
-        logging.error(f"Redis Connection Error: {e}")
+        logging.error(f"Redis Connection Error ({REDIS_URL}): {e}")
     
     yield
     # Shutdown: close the global clients
