@@ -564,8 +564,19 @@ function App() {
       {/* BYSTANDER CHECKLIST MODAL */}
       <AnimatePresence>
         {showBystanderChecklist && (
-          <div className="settings-overlay" onClick={(e) => e.target === e.currentTarget && setShowBystanderChecklist(false)}>
-            <motion.div className="settings-modal" initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }}>
+          <motion.div 
+            className="settings-overlay" 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={(e) => e.target === e.currentTarget && setShowBystanderChecklist(false)}
+          >
+            <motion.div 
+              className="settings-modal" 
+              initial={{ y: 50, opacity: 0 }} 
+              animate={{ y: 0, opacity: 1 }} 
+              exit={{ y: 50, opacity: 0 }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                 <h2 style={{ color: 'var(--primary-red)', display: 'flex', alignItems: 'center', gap: '10px' }}><ClipboardCheck size={24} /> {t('bystander_checklist')}</h2>
                 <button className="theme-toggle" onClick={() => setShowBystanderChecklist(false)}><X size={20} /></button>
@@ -585,7 +596,7 @@ function App() {
               </div>
               <button className="btn btn-call" style={{ marginTop: '1.5rem' }} onClick={() => setShowBystanderChecklist(false)}>{t('save_close')}</button>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
