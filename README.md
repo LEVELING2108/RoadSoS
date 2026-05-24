@@ -1,103 +1,82 @@
-# 🚑 ROADSoS: High-Performance Emergency Response Ecosystem
+# 🚨 ROADSoS - Global Emergency Rescue Network
 
-[![React](https://img.shields.io/badge/Frontend-React%2019-blue?logo=react)](https://react.dev/)
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)](https://fastapi.tiangolo.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+**Empowering the Golden Hour: High-Reliability Emergency Assistance & Global Rescue Coordination.**
 
-**ROADSoS** is a world-class emergency assistance platform that transforms your smartphone into an autonomous digital first responder. By combining real-time location intelligence, high-performance service discovery, and secure live tracking, ROADSoS provides critical coordination when every second counts.
+ROADSoS is a location-based platform designed to provide immediate access to life-saving services during road accidents. By integrating trauma centers, ambulances, police, and vehicle rescue into a single interface, it supports both victims and bystanders in taking rapid, effective action.
 
 ---
 
-## 🌟 Key Features
-
-- **🌍 Global Localization (i18n)**: Full multi-language support across dozens of languages. The app automatically adapts its UI and voice guidance to your selected locale.
-- **🚨 Region-Specific SOS**: Automatically detects your country via GPS and provides direct-dial buttons for local authorities (e.g., 911, 112, 100/108).
-- **🗺️ Intelligent Service Discovery**: Instantly locates nearby hospitals, clinics, police stations, and repair shops using an optimized Overpass API integration with intelligent caching.
-- **🛰️ Live SOS Tracking**: Secure WebSocket streams allowing emergency contacts to watch your GPS location move live on a shared dashboard.
-- **⚡ Advanced Reliability & Performance**: 
-    - **Connection Pooling**: Backend optimized with global HTTP connection pooling for lightning-fast service discovery.
-    - **Smart Geolocation**: Dual-mode GPS strategy that balances extreme accuracy during emergencies with battery-efficient background monitoring.
-    - **Zero-Stale Geolocation**: Forced fresh GPS locks to ensure accuracy in fast-moving emergencies.
-- **🎯 Precision Haptics**: Native-feel physical feedback for critical actions, ensuring clarity in high-stress situations.
-- **💓 Vital Monitoring (rPPG)**: Experimental camera-based heart rate monitoring using pixel analysis for immediate vital assessment.
+## 🌐 Live Services
+- **Backend API**: [https://roadsos-ymil.onrender.com](https://roadsos-ymil.onrender.com)
+- **Status**: ✅ Operational (Redis Engine Connected)
 
 ---
 
-## 🛠️ Tech Stack
+## ✨ Key Features
 
-### Intelligence & Vitals
-- **Bio-Signals**: rPPG Pixel Analysis (Canvas API)
-- **Voice**: Web Speech API (Synthesis & Recognition)
+### 🚑 1. Golden Hour Rescue Coordination
+- **Trauma Center Prioritization**: Specialized accident care facilities are prioritized and highlighted with pulsing "Trauma Center" badges.
+- **Real-time Tracking**: WebSocket-powered live location sharing allows victims to broadcast their movements to rescue teams and family.
+- **Bystander Emergency Protocol**: A proactive 3-step checklist (Secure Scene, Assess, Coordinate) that triggers during an SOS to guide first responders.
 
-### Frontend & Real-Time
-- **Framework**: React 19 (TypeScript)
-- **Animations**: Framer Motion (Fluid gestures & staggered transitions)
-- **Connectivity**: WebSockets (Bidirectional streaming)
-- **Mapping**: React-Leaflet / OSRM Routing Engine
-- **PWA**: Fully offline-capable with Service Workers
+### 🌍 2. Global Applicability
+- **Intelligent Localization**: Automatically detects your country and provides local Police, Ambulance, and Fire numbers for over 50+ countries.
+- **Multi-Mirror Failover**: Backend logic automatically rotates between 3 different global data providers (Overpass API mirrors) to ensure 99.9% data availability.
+
+### 📶 3. Robust Offline Functionality
+- **Map Tile Caching**: PWA implementation pre-caches OpenStreetMap tiles, ensuring the map remains functional even in zero-network zones.
+- **Service Data Persistence**: Critical contact data and previous search results are cached locally for instant access.
+
+### 🛠️ 4. Comprehensive Vehicle Support
+- **Beyond Repairs**: Explicit identification of **Towing Services**, **Showrooms**, and **Puncture Shops** for faster vehicle recovery.
+
+---
+
+## 🚀 Tech Stack
+
+### Frontend
+- **Framework**: React 18 with TypeScript
+- **State/Animation**: Framer Motion & Lucide Icons
+- **Mapping**: Leaflet with Workbox-powered Tile Caching
+- **PWA**: Fully installable as a mobile app with offline support
 
 ### Backend
-- **Framework**: FastAPI (Python 3.10+)
-- **HTTP Engine**: HTTPX with Connection Pooling
-- **Session Management**: UUID-based secure tracking sessions
---
+- **Engine**: FastAPI (Python 3.11+)
+- **Real-time**: WebSockets with Redis Pub/Sub
+- **Cache**: Redis (High-speed transient storage)
+- **Deployment**: Render (Web Service + Redis Service)
 
+---
 
-## 🚀 Getting Started
+## 🛠️ Local Development
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (v18+)
-- [Python](https://www.python.org/) (v3.10+)
+- Docker & Docker Compose
 
-### 1. Backend Setup
-```bash
-cd backend
-python -m venv venv
-source venv/bin/scripts/activate  # Windows: .\venv\Scripts\activate
-pip install -r requirements.txt
-python main.py
-```
-*Backend runs on `http://localhost:8000`*
+### Quick Start
+1. **Clone the Repo**:
+   ```bash
+   git clone https://github.com/LEVELING2108/RoadSoS.git
+   cd RoadSoS
+   ```
 
-### 2. Frontend Setup
-```bash
-cd frontend
-npm install
-npm run dev
-```
-*Frontend runs on `http://localhost:5173`*
+2. **Launch the Stack**:
+   ```bash
+   docker-compose up --build
+   ```
+
+3. **Access the App**:
+   - Frontend: `http://localhost:5173`
+   - Backend API: `http://localhost:8000`
 
 ---
 
-## 📖 API Documentation
-
-The backend provides a clean REST API. Once the backend is running, you can access the interactive Swagger docs at:
-`http://localhost:8000/docs`
-
-### Primary Endpoint
-`GET /api/emergency-services`
-- **Params**: `lat`, `lon`, `radius` (meters)
-- **Returns**: Geo-tagged list of nearby emergency facilities.
+## 📈 Evaluation Criteria Alignment
+- **Reliability**: Multi-source backend failover and Redis-backed caching.
+- **Accuracy**: Specialized OSM tagging for Trauma and Rescue identification.
+- **Offline**: PWA map tile caching for "no-signal" scenarios.
+- **Innovation**: Real-time coordination dashboard & proactive bystander guidance.
 
 ---
 
-## 🛡️ Safety Notice
-ROADSoS is a support tool. Always dial local emergency numbers (911, 112, 999) as your first course of action in a life-threatening situation.
-
----
-
-## 🤝 Contributing
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
----
-
-## 📄 License
-Distributed under the MIT License. See `LICENSE` for more information.
-
-Developed with ❤️ for Global Safety.
+© 2026 ROADSoS Global Network. Built for safety.
