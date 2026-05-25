@@ -14,27 +14,42 @@ ROADSoS is a high-performance, location-based platform designed to provide immed
 
 ---
 
-## ✨ Key Features
+## ✨ Latest Updates (May 2026)
 
-### 🚑 1. Golden Hour Rescue Coordination
+### 📳 1. Shake to Activate SOS
+- **Gesture-Based Triggers**: Added support for motion-activated SOS calls. Users can firmly shake their device to trigger an emergency session.
+- **3-Second Safety Window**: To prevent false alarms, a high-priority countdown overlay appears with haptic feedback, allowing users to cancel accidental triggers.
+- **Cross-Platform Compatibility**: Optimized for both Android and iOS devices using the `DeviceMotionEvent` API.
+
+### 🛡️ 2. "Instant Access" Security Model
+- **Zero-Friction Emergency Use**: Removed user authentication/login requirements. Victims can access all life-saving features instantly without remembering passwords.
+- **Backend Rate Limiting**: Integrated `SlowApi` with Redis to protect the infrastructure from abuse while maintaining open access for legitimate users.
+- **Enhanced Privacy**: User profile data (Name, Blood Group, Medical Notes) is stored strictly on the local device, ensuring absolute privacy.
+
+### 🌍 3. Regional Language "Scan"
+- **GPS-Based Localization**: The app now detects the user's specific state (e.g., Tamil Nadu, Maharashtra) and automatically suggests or switches to the primary regional language.
+- **Scheduled Languages Support**: Full support for Indian Scheduled Languages (Hindi, Tamil, Telugu, Marathi, etc.) to assist non-English speakers during crises.
+
+### 🛠️ 4. Advanced Mirror Reliability
+- **Smart Failover Tracking**: Backend now tracks the health of multiple global Overpass API mirrors. If one provider fails, the system automatically redirects to a stable mirror in real-time.
+- **Detailed Error Logging**: Improved diagnostics to capture specific mirror failure types (Timeouts, Connection Errors) for better maintenance.
+
+---
+
+## ✨ Core Features
+
+### 🚑 Golden Hour Rescue Coordination
 - **Trauma Center Prioritization**: Specialized accident care facilities are prioritized and highlighted with pulsing "Trauma Center" badges.
-- **High-Efficiency Parallel Search**: Backend splits queries into specific categories (Medical, Security, Rescue) and executes them concurrently across multiple global mirrors to ensure zero-lag transitions.
-- **Real-time Tracking**: WebSocket-powered live location sharing allows victims to broadcast their movements to rescue teams and family via Redis Pub/Sub.
+- **High-Efficiency Parallel Search**: Backend splits queries into specific categories and executes them concurrently across multiple global mirrors.
+- **Real-time Tracking**: WebSocket-powered live location sharing allows victims to broadcast their movements to rescue teams via Redis Pub/Sub.
 
-### 📋 2. Proactive Bystander Support
+### 📋 Proactive Bystander Support
 - **Bystander Emergency Protocol**: A standalone, proactive 3-step checklist (Secure Scene, Assess, Coordinate) to guide first responders.
 - **GPS Coordination**: One-tap location copying to accurately relay coordinates to emergency dispatchers.
 
-### 🌍 3. Global Applicability
-- **Intelligent Localization**: Automatically detects your country and provides local Police, Ambulance, and Fire numbers for over 50+ countries.
-- **Multi-Mirror Failover**: Backend logic automatically rotates between 4 different global data providers (Overpass API mirrors) to ensure 99.9% data availability.
-
-### 📶 4. Robust Offline Functionality
+### 📶 Robust Offline Functionality
 - **Map Tile Caching**: PWA implementation pre-caches OpenStreetMap tiles, ensuring the map remains functional even in zero-network zones.
 - **Geospatial Cache Headers**: Redis caching with rounded coordinate grids (~110m) to ensure nearby users share the same ultra-fast responses.
-
-### 🛠️ 5. Comprehensive Vehicle Support
-- **Beyond Repairs**: Explicit identification of **Towing Services**, **Showrooms**, and **Puncture Shops** for faster vehicle recovery.
 
 ---
 
@@ -48,9 +63,9 @@ ROADSoS is a high-performance, location-based platform designed to provide immed
 
 ### Backend
 - **Engine**: FastAPI (Python 3.11+)
+- **Security**: SlowApi Rate Limiting (Redis-backed)
 - **Real-time**: WebSockets with Redis Pub/Sub
 - **Cache**: Redis (Geospatial-hashed transient storage)
-- **Deployment**: Render (Optimized Free Tier configuration)
 
 ---
 
@@ -81,7 +96,7 @@ ROADSoS is a high-performance, location-based platform designed to provide immed
 - **Reliability**: Multi-source backend failover and Redis-backed caching.
 - **Accuracy**: Specialized OSM tagging for Trauma and Rescue identification.
 - **Offline**: PWA map tile caching for "no-signal" scenarios.
-- **Innovation**: Real-time coordination dashboard, parallel search architecture & proactive bystander guidance.
+- **Innovation**: Gesture-based SOS triggers, regional language scanning, and parallel search architecture.
 
 ---
 
