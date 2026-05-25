@@ -95,8 +95,12 @@ function App() {
     name: '',
     bloodGroup: '',
     medicalNotes: '',
-    scanLanguage: false
+    scanLanguage: false,
+    shakeSOS: false
   });
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const countdownInterval = useRef<any>(null);
+  const lastShake = useRef<number>(0);
   const isMounted = useRef(true);
   const ws = useRef<WebSocket | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -252,7 +256,32 @@ function App() {
   const handleSOS = useCallback(() => {
     triggerHaptic([100, 50, 100]);
     window.open(`tel:${emergencyConfig.combined || emergencyConfig.police}`);
+    setCountdown(null);
+    if (countdownInterval.current) clearInterval(countdownInterval.current);
   }, [emergencyConfig, triggerHaptic]);
+
+  const startSOSCountdown = useCallback(() => {
+    if (countdown !== null) return;
+    triggerHaptic([200, 100, 200]);
+    setCountdown(3);
+    countdownInterval.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev === null || prev <= 1) {
+          clearInterval(countdownInterval.current);
+          handleSOS();
+          return null;
+        }
+        triggerHaptic(50);
+        return prev - 1;
+      });
+    }, 1000);
+  }, [countdown, handleSOS, triggerHaptic]);
+
+  const cancelSOS = useCallback(() => {
+    if (countdownInterval.current) clearInterval(countdownInterval.current);
+    setCountdown(null);
+    triggerHaptic(100);
+  }, [triggerHaptic]);
 
   useEffect(() => {
     isMounted.current = true;
@@ -283,6 +312,32 @@ function App() {
     const handleOffline = () => setIsOffline(true);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
+    // Shake Detection logic
+    const handleMotion = (event: DeviceMotionEvent) => {
+      if (!profile.shakeSOS || countdown !== null) return;
+      
+      const acc = event.accelerationIncludingGravity;
+      if (!acc) return;
+
+      const threshold = 25; // High threshold for "High Sensitivity"
+      const totalAcc = Math.sqrt((acc.x || 0)**2 + (acc.y || 0)**2 + (acc.z || 0)**2);
+      
+      if (totalAcc > threshold) {
+        const now = Date.now();
+        if (now - lastShake.current > 1000) { // Prevent multiple triggers from one shake
+          lastShake.current = now;
+          startSOSCountdown();
+        }
+      }
+    };
+
+    if (profile.shakeSOS) {
+      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+        (DeviceMotionEvent as any).requestPermission();
+      }
+      window.addEventListener('devicemotion', handleMotion);
+    }
 
     const cached = ['roadsos_cache', 'roadsos_contacts', 'roadsos_profile'].map(k => localStorage.getItem(k));
     if (cached[0]) setServices(JSON.parse(cached[0]));
@@ -423,6 +478,34 @@ function App() {
   return (
     <div className="app-container">
       {isOffline && <div className="offline-notice">{t('offline_notice')}</div>}
+      
+      {/* Shake SOS Countdown Overlay */}
+      <AnimatePresence>
+        {countdown !== null && (
+          <motion.div 
+            className="settings-overlay" 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            style={{ zIndex: 9999, background: 'rgba(255, 59, 48, 0.9)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white', textAlign: 'center' }}
+          >
+            <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} exit={{ scale: 0.5 }}>
+              <ShieldAlert size={80} style={{ marginBottom: '1rem' }} />
+              <h2 style={{ fontSize: '2rem', marginBottom: '1rem' }}>EMERGENCY SOS</h2>
+              <p style={{ fontSize: '1.2rem', marginBottom: '2rem' }}>Calling in {countdown} seconds...</p>
+              <div style={{ fontSize: '4rem', fontWeight: 'bold', marginBottom: '3rem' }}>{countdown}</div>
+              <button 
+                className="btn btn-nav" 
+                onClick={cancelSOS}
+                style={{ background: 'white', color: 'var(--primary-red)', padding: '15px 40px', borderRadius: '30px', fontSize: '1.2rem', fontWeight: 'bold' }}
+              >
+                CANCEL
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {isListening && (
           <motion.div className="offline-notice" style={{ background: 'var(--primary-red)', color: 'white' }} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
@@ -657,6 +740,13 @@ function App() {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--input-bg)', padding: '12px', borderRadius: '12px', marginBottom: '0.8rem' }}>
                     <span style={{ fontSize: '0.9rem' }}>Scan Regional Language</span>
                     <input type="checkbox" checked={profile.scanLanguage} onChange={(e) => saveProfile({...profile, scanLanguage: e.target.checked})} style={{ width: '20px', height: '20px' }} />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--input-bg)', padding: '12px', borderRadius: '12px', marginBottom: '0.8rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '0.9rem' }}>Shake to Activate SOS</span>
+                      <span style={{ fontSize: '0.7rem', opacity: 0.6 }}>Triggers emergency call on hard shake</span>
+                    </div>
+                    <input type="checkbox" checked={profile.shakeSOS} onChange={(e) => saveProfile({...profile, shakeSOS: e.target.checked})} style={{ width: '20px', height: '20px' }} />
                   </div>
                   <select className="contact-input" value={i18n.language} onChange={(e) => i18n.changeLanguage(e.target.value)}>
                     <optgroup label="Global Languages">
