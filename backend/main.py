@@ -40,6 +40,24 @@ redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 # Rate Limiter Configuration
 limiter = Limiter(key_func=get_remote_address, storage_uri=REDIS_URL)
 
+# Global HTTP client with robust headers
+http_client = httpx.AsyncClient(
+    timeout=20.0,
+    headers={
+        "User-Agent": "ROADSoS/1.0 (https://github.com/LEVELING2108/RoadSoS)",
+        "Accept": "application/json"
+    }
+)
+
+# Mirror Health Tracking
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.osm.ch/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter"
+]
+MIRROR_STATUS = {url: {"fails": 0, "last_error": None} for url in OVERPASS_ENDPOINTS}
+
 # Database Helper
 def get_db():
     conn = sqlite3.connect("roadsos.db")
@@ -192,17 +210,44 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
 async def fetch_parallel(query: str, endpoint_idx: int):
     endpoint = OVERPASS_ENDPOINTS[endpoint_idx % len(OVERPASS_ENDPOINTS)]
+    
+    # Simple failover: if this mirror is known to be failing, try the next one
+    if MIRROR_STATUS[endpoint]["fails"] >= 3:
+        alt_endpoint = OVERPASS_ENDPOINTS[(endpoint_idx + 1) % len(OVERPASS_ENDPOINTS)]
+        logger.warning(f"Mirror {endpoint} is unstable (fails: {MIRROR_STATUS[endpoint]['fails']}). Redirecting to {alt_endpoint}")
+        endpoint = alt_endpoint
+
     try:
         logger.info(f"Querying {endpoint}...")
-        response = await http_client.post(endpoint, data={"data": query})
+        response = await http_client.post(endpoint, data={"data": query}, timeout=15.0)
+        
         if response.status_code == 200:
+            MIRROR_STATUS[endpoint]["fails"] = 0
             elements = response.json().get("elements", [])
             logger.info(f"Success from {endpoint}: {len(elements)} items")
             return elements
-        logger.error(f"Fail from {endpoint}: {response.status_code}")
+        
+        error_msg = f"HTTP {response.status_code}"
+        MIRROR_STATUS[endpoint]["fails"] += 1
+        MIRROR_STATUS[endpoint]["last_error"] = error_msg
+        logger.error(f"Fail from {endpoint}: {error_msg}")
+        return []
+        
+    except httpx.TimeoutException:
+        MIRROR_STATUS[endpoint]["fails"] += 1
+        MIRROR_STATUS[endpoint]["last_error"] = "Timeout"
+        logger.error(f"Error from {endpoint}: Request Timeout (15s)")
+        return []
+    except httpx.ConnectError:
+        MIRROR_STATUS[endpoint]["fails"] += 1
+        MIRROR_STATUS[endpoint]["last_error"] = "ConnectError"
+        logger.error(f"Error from {endpoint}: Connection Failed")
         return []
     except Exception as e:
-        logger.error(f"Error from {endpoint}: {str(e)}")
+        err_name = type(e).__name__
+        MIRROR_STATUS[endpoint]["fails"] += 1
+        MIRROR_STATUS[endpoint]["last_error"] = err_name
+        logger.error(f"Error from {endpoint}: {err_name} - {str(e)}")
         return []
 
 @app.get("/api/emergency-services")
