@@ -320,12 +320,15 @@ function App() {
       const acc = event.accelerationIncludingGravity;
       if (!acc) return;
 
-      const threshold = 25; // High threshold for "High Sensitivity"
+      const threshold = 15; // Refined threshold for Android/iOS (G is ~9.8)
       const totalAcc = Math.sqrt((acc.x || 0)**2 + (acc.y || 0)**2 + (acc.z || 0)**2);
       
+      // Debug log to help tune sensitivity on different devices
+      if (totalAcc > 5) console.log("Motion Detected:", totalAcc.toFixed(2));
+
       if (totalAcc > threshold) {
         const now = Date.now();
-        if (now - lastShake.current > 1000) { // Prevent multiple triggers from one shake
+        if (now - lastShake.current > 1000) { 
           lastShake.current = now;
           startSOSCountdown();
         }
@@ -352,9 +355,10 @@ function App() {
       isMounted.current = false;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('devicemotion', handleMotion);
       if (ws.current) ws.current.close();
     };
-  }, [i18n.language, t, isListening, fetchLocation, joinTrackingSession, speak, triggerHaptic, handleSOS]);
+  }, [i18n.language, t, isListening, fetchLocation, joinTrackingSession, speak, triggerHaptic, handleSOS, profile.shakeSOS, startSOSCountdown]);
 
   const filteredServices = useMemo(() => {
     return services.filter(s => {
