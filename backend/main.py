@@ -1,16 +1,21 @@
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+from datetime import datetime, timedelta
 import httpx
 import logging
 import uuid
 import json
 import os
 import asyncio
+import sqlite3
 import redis.asyncio as redis
-from typing import Dict, List
+from typing import Dict, List, Optional
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 
@@ -20,6 +25,14 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
+# Auth Configuration
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "roadsos-emergency-secure-key-2026-v1")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 10080  # 1 week
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/token")
+
 # Redis Configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
@@ -27,17 +40,32 @@ redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 # Rate Limiter Configuration
 limiter = Limiter(key_func=get_remote_address, storage_uri=REDIS_URL)
 
-# Global HTTP client with robust headers
-http_client = httpx.AsyncClient(
-    timeout=20.0,
-    headers={
-        "User-Agent": "ROADSoS/1.0 (https://github.com/LEVELING2108/RoadSoS)",
-        "Accept": "application/json"
-    }
-)
+# Database Helper
+def get_db():
+    conn = sqlite3.connect("roadsos.db")
+    conn.row_factory = sqlite3.Row
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+def init_db():
+    with sqlite3.connect("roadsos.db") as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                hashed_password TEXT NOT NULL,
+                name TEXT,
+                blood_group TEXT,
+                medical_notes TEXT
+            )
+        ''')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Initializing ROADSoS Security Layer...")
+    init_db()
     logger.info(f"Attempting to connect to Redis at: {REDIS_URL}")
     try:
         await redis_client.ping()
@@ -53,20 +81,72 @@ app = FastAPI(title="ROADSoS API", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# --- Auth Helpers ---
 
-OVERPASS_ENDPOINTS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.osm.ch/api/interpreter",
-    "https://lz4.overpass-api.de/api/interpreter"
-]
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(status_code=401, detail="Could not validate credentials", headers={"WWW-Authenticate": "Bearer"})
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None: raise credentials_exception
+    except JWTError: raise credentials_exception
+    
+    with sqlite3.connect("roadsos.db") as conn:
+        conn.row_factory = sqlite3.Row
+        user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        if user is None: raise credentials_exception
+        return dict(user)
+
+# --- Endpoints ---
+
+@app.post("/api/register")
+@limiter.limit("3/hour")
+async def register(request: Request, data: dict):
+    username = data.get("username")
+    password = data.get("password")
+    if not username or not password: raise HTTPException(status_code=400, detail="Missing username or password")
+    
+    hashed = pwd_context.hash(password)
+    try:
+        with sqlite3.connect("roadsos.db") as conn:
+            conn.execute("INSERT INTO users (username, hashed_password) VALUES (?, ?)", (username, hashed))
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    return {"message": "User registered successfully"}
+
+@app.post("/api/token")
+@limiter.limit("10/minute")
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+    with sqlite3.connect("roadsos.db") as conn:
+        conn.row_factory = sqlite3.Row
+        user = conn.execute("SELECT * FROM users WHERE username = ?", (form_data.username,)).fetchone()
+        if not user or not pwd_context.verify(form_data.password, user["hashed_password"]):
+            raise HTTPException(status_code=401, detail="Incorrect username or password")
+        
+    access_token = create_access_token(data={"sub": user["username"]})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/api/me")
+async def read_users_me(current_user: dict = Depends(get_current_user)):
+    user_data = current_user.copy()
+    del user_data["hashed_password"]
+    return user_data
+
+@app.put("/api/profile")
+async def update_profile(data: dict, current_user: dict = Depends(get_current_user)):
+    with sqlite3.connect("roadsos.db") as conn:
+        conn.execute(
+            "UPDATE users SET name = ?, blood_group = ?, medical_notes = ? WHERE username = ?",
+            (data.get("name"), data.get("bloodGroup"), data.get("medicalNotes"), current_user["username"])
+        )
+    return {"message": "Profile updated"}
 
 MIRROR_STATUS = {url: {"fails": 0, "last_error": None} for url in OVERPASS_ENDPOINTS}
 

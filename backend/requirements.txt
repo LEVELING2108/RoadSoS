@@ -8,3 +8,5 @@ redis==5.0.1
 hiredis==3.0.0
 websockets==16.0
 slowapi==0.1.9
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
