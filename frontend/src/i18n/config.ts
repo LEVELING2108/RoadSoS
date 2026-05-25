@@ -36,6 +36,7 @@ i18n
   .use(initReactI18next)
   .init({
     fallbackLng: 'en',
+    lng: 'en', // Force English as default
     debug: false,
     resources: {
       en: { translation: en },

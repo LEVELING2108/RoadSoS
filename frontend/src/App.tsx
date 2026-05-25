@@ -94,11 +94,24 @@ function App() {
   const [profile, setProfile] = useState({
     name: '',
     bloodGroup: '',
-    medicalNotes: ''
+    medicalNotes: '',
+    scanLanguage: false
   });
   const isMounted = useRef(true);
   const ws = useRef<WebSocket | null>(null);
   const recognitionRef = useRef<any>(null);
+
+  const STATE_LANGUAGE_MAP: Record<string, string> = {
+    'Andhra Pradesh': 'te', 'Arunachal Pradesh': 'en', 'Assam': 'as', 'Bihar': 'hi',
+    'Chhattisgarh': 'hi', 'Goa': 'kok', 'Gujarat': 'gu', 'Haryana': 'hi',
+    'Himachal Pradesh': 'hi', 'Jharkhand': 'hi', 'Karnataka': 'kn', 'Kerala': 'ml',
+    'Madhya Pradesh': 'hi', 'Maharashtra': 'mr', 'Manipur': 'mni', 'Meghalaya': 'en',
+    'Mizoram': 'en', 'Nagaland': 'en', 'Odisha': 'or', 'Punjab': 'pa',
+    'Rajasthan': 'hi', 'Sikkim': 'ne', 'Tamil Nadu': 'ta', 'Telangana': 'te',
+    'Tripura': 'bn', 'Uttar Pradesh': 'hi', 'Uttarakhand': 'hi', 'West Bengal': 'bn',
+    'Delhi': 'hi', 'Jammu and Kashmir': 'ks', 'Ladakh': 'hi', 'Lakshadweep': 'ml',
+    'Puducherry': 'ta'
+  };
 
   // --- Callbacks ---
 
@@ -117,11 +130,19 @@ function App() {
   const fetchRegionInfo = useCallback(async (lat: number, lon: number) => {
     try {
       const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-      const code = res.data.address.country_code.toUpperCase();
+      const addr = res.data.address;
+      const code = addr.country_code.toUpperCase();
       setCountryCode(code);
       setEmergencyConfig(getEmergencyConfig(code));
+
+      if (profile.scanLanguage && code === 'IN' && addr.state) {
+        const regionalLang = STATE_LANGUAGE_MAP[addr.state];
+        if (regionalLang && regionalLang !== i18n.language) {
+          i18n.changeLanguage(regionalLang);
+        }
+      }
     } catch (e) { console.error("Region Info Error:", e); }
-  }, []);
+  }, [profile.scanLanguage, i18n]);
 
   const startTracking = useCallback(async (lat: number, lon: number) => {
     if (ws.current) return;
@@ -633,6 +654,10 @@ function App() {
               <div className="settings-scroll-area">
                 <section className="settings-section">
                   <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--primary-red)' }}>Language / भाषा</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--input-bg)', padding: '12px', borderRadius: '12px', marginBottom: '0.8rem' }}>
+                    <span style={{ fontSize: '0.9rem' }}>Scan Regional Language</span>
+                    <input type="checkbox" checked={profile.scanLanguage} onChange={(e) => saveProfile({...profile, scanLanguage: e.target.checked})} style={{ width: '20px', height: '20px' }} />
+                  </div>
                   <select className="contact-input" value={i18n.language} onChange={(e) => i18n.changeLanguage(e.target.value)}>
                     <optgroup label="Global Languages">
                       <option value="en">English</option><option value="es">Español</option><option value="fr">Français</option>
