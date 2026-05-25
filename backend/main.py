@@ -40,6 +40,24 @@ redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 # Rate Limiter Configuration
 limiter = Limiter(key_func=get_remote_address, storage_uri=REDIS_URL)
 
+# Global HTTP client with robust headers
+http_client = httpx.AsyncClient(
+    timeout=20.0,
+    headers={
+        "User-Agent": "ROADSoS/1.0 (https://github.com/LEVELING2108/RoadSoS)",
+        "Accept": "application/json"
+    }
+)
+
+# Mirror Health Tracking
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.osm.ch/api/interpreter",
+    "https://lz4.overpass-api.de/api/interpreter"
+]
+MIRROR_STATUS = {url: {"fails": 0, "last_error": None} for url in OVERPASS_ENDPOINTS}
+
 # Database Helper
 def get_db():
     conn = sqlite3.connect("roadsos.db")
