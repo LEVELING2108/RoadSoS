@@ -2,13 +2,15 @@
 
 **Empowering the Golden Hour: High-Reliability Emergency Assistance & Global Rescue Coordination.**
 
-ROADSoS is a location-based platform designed to provide immediate access to life-saving services during road accidents. By integrating trauma centers, ambulances, police, and vehicle rescue into a single interface, it supports both victims and bystanders in taking rapid, effective action.
+ROADSoS is a high-performance, location-based platform designed to provide immediate access to life-saving services during road accidents. By integrating trauma centers, ambulances, police, and vehicle rescue into a single interface, it supports both victims and bystanders in taking rapid, effective action.
 
----
-
-## 🌐 Live Services
-- **Backend API**: [https://roadsos-ymil.onrender.com](https://roadsos-ymil.onrender.com)
-- **Status**: ✅ Operational (Redis Engine Connected)
+![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
+![Redis](https://img.shields.io/badge/redis-%23DD0031.svg?style=for-the-badge&logo=redis&logoColor=white)
+![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)
+![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
+![PWA](https://img.shields.io/badge/PWA-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)
 
 ---
 
@@ -16,18 +18,22 @@ ROADSoS is a location-based platform designed to provide immediate access to lif
 
 ### 🚑 1. Golden Hour Rescue Coordination
 - **Trauma Center Prioritization**: Specialized accident care facilities are prioritized and highlighted with pulsing "Trauma Center" badges.
-- **Real-time Tracking**: WebSocket-powered live location sharing allows victims to broadcast their movements to rescue teams and family.
-- **Bystander Emergency Protocol**: A proactive 3-step checklist (Secure Scene, Assess, Coordinate) that triggers during an SOS to guide first responders.
+- **High-Efficiency Parallel Search**: Backend splits queries into specific categories (Medical, Security, Rescue) and executes them concurrently across multiple global mirrors to ensure zero-lag transitions.
+- **Real-time Tracking**: WebSocket-powered live location sharing allows victims to broadcast their movements to rescue teams and family via Redis Pub/Sub.
 
-### 🌍 2. Global Applicability
+### 📋 2. Proactive Bystander Support
+- **Bystander Emergency Protocol**: A standalone, proactive 3-step checklist (Secure Scene, Assess, Coordinate) to guide first responders.
+- **GPS Coordination**: One-tap location copying to accurately relay coordinates to emergency dispatchers.
+
+### 🌍 3. Global Applicability
 - **Intelligent Localization**: Automatically detects your country and provides local Police, Ambulance, and Fire numbers for over 50+ countries.
-- **Multi-Mirror Failover**: Backend logic automatically rotates between 3 different global data providers (Overpass API mirrors) to ensure 99.9% data availability.
+- **Multi-Mirror Failover**: Backend logic automatically rotates between 4 different global data providers (Overpass API mirrors) to ensure 99.9% data availability.
 
-### 📶 3. Robust Offline Functionality
+### 📶 4. Robust Offline Functionality
 - **Map Tile Caching**: PWA implementation pre-caches OpenStreetMap tiles, ensuring the map remains functional even in zero-network zones.
-- **Service Data Persistence**: Critical contact data and previous search results are cached locally for instant access.
+- **Geospatial Cache Headers**: Redis caching with rounded coordinate grids (~110m) to ensure nearby users share the same ultra-fast responses.
 
-### 🛠️ 4. Comprehensive Vehicle Support
+### 🛠️ 5. Comprehensive Vehicle Support
 - **Beyond Repairs**: Explicit identification of **Towing Services**, **Showrooms**, and **Puncture Shops** for faster vehicle recovery.
 
 ---
@@ -43,8 +49,8 @@ ROADSoS is a location-based platform designed to provide immediate access to lif
 ### Backend
 - **Engine**: FastAPI (Python 3.11+)
 - **Real-time**: WebSockets with Redis Pub/Sub
-- **Cache**: Redis (High-speed transient storage)
-- **Deployment**: Render (Web Service + Redis Service)
+- **Cache**: Redis (Geospatial-hashed transient storage)
+- **Deployment**: Render (Optimized Free Tier configuration)
 
 ---
 
@@ -75,7 +81,7 @@ ROADSoS is a location-based platform designed to provide immediate access to lif
 - **Reliability**: Multi-source backend failover and Redis-backed caching.
 - **Accuracy**: Specialized OSM tagging for Trauma and Rescue identification.
 - **Offline**: PWA map tile caching for "no-signal" scenarios.
-- **Innovation**: Real-time coordination dashboard & proactive bystander guidance.
+- **Innovation**: Real-time coordination dashboard, parallel search architecture & proactive bystander guidance.
 
 ---
 
