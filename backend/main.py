@@ -1,5 +1,8 @@
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import httpx
 import logging
 import uuid
@@ -20,6 +23,9 @@ load_dotenv()
 # Redis Configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+
+# Rate Limiter Configuration
+limiter = Limiter(key_func=get_remote_address, storage_uri=REDIS_URL)
 
 # Global HTTP client with robust headers
 http_client = httpx.AsyncClient(
@@ -44,6 +50,8 @@ async def lifespan(app: FastAPI):
     await redis_client.close()
 
 app = FastAPI(title="ROADSoS API", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -61,7 +69,8 @@ OVERPASS_ENDPOINTS = [
 ]
 
 @app.post("/api/create-session")
-async def create_session():
+@limiter.limit("5/minute")
+async def create_session(request: Request):
     return {"session_id": str(uuid.uuid4())}
 
 async def redis_listener(websocket: WebSocket, session_id: str):
@@ -117,7 +126,9 @@ async def fetch_parallel(query: str, endpoint_idx: int):
         return []
 
 @app.get("/api/emergency-services")
+@limiter.limit("10/minute")
 async def get_emergency_services(
+    request: Request,
     lat: float = Query(..., description="Latitude"),
     lon: float = Query(..., description="Longitude"),
     radius: int = Query(5000, description="Radius")
