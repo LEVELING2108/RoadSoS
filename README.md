@@ -30,7 +30,12 @@ ROADSoS is a high-performance, location-based platform designed to provide immed
 - **GPS-Based Localization**: The app now detects the user's specific state (e.g., Tamil Nadu, Maharashtra) and automatically suggests or switches to the primary regional language.
 - **Scheduled Languages Support**: Full support for Indian Scheduled Languages (Hindi, Tamil, Telugu, Marathi, etc.) to assist non-English speakers during crises.
 
-### 🛠️ 4. Advanced Mirror Reliability
+### 📲 4. Automated SMS Alerts
+- **Background Dispatch**: Replaced manual SMS app opening with automated background delivery via Twilio.
+- **Multi-Contact Broadcast**: One-tap (or shake-activated) broadcasting of your live location and tracking link to all 3 emergency contacts simultaneously.
+- **Resilient Fallback**: If the automated service fails due to network issues, the app automatically falls back to the manual system SMS app to ensure the message gets out.
+
+### 🛠️ 5. Advanced Mirror Reliability
 - **Smart Failover Tracking**: Backend now tracks the health of multiple global Overpass API mirrors. If one provider fails, the system automatically redirects to a stable mirror in real-time.
 - **Detailed Error Logging**: Improved diagnostics to capture specific mirror failure types (Timeouts, Connection Errors) for better maintenance.
 

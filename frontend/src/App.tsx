@@ -463,11 +463,32 @@ function App() {
   const saveProfile = (p: any) => { setProfile(p); localStorage.setItem('roadsos_profile', JSON.stringify(p)); };
   const saveContacts = (c: string[]) => { setContacts(c); localStorage.setItem('roadsos_contacts', JSON.stringify(c)); };
   
-  const sendAlerts = () => {
+  const sendAlerts = async () => {
     if (contacts.length === 0) { setShowSettings(true); return; }
+    triggerHaptic(50);
+    
     const loc = location ? `https://www.google.com/maps?q=${location.lat},${location.lon}` : "Unknown";
     const link = trackingSessionId ? `${window.location.origin}/?track=${trackingSessionId}` : "";
-    window.open(`sms:${contacts.join(';')}?body=${encodeURIComponent(`EMERGENCY SOS: Location: ${loc}. Track: ${link}`)}`);
+    const message = `EMERGENCY SOS: I need help! My location: ${loc}${link ? `. Track me live: ${link}` : ''}`;
+
+    try {
+      setError("Sending background alerts...");
+      const res = await axios.post('api/send-alert-sms', { contacts, message });
+      
+      const failed = res.data.results.filter((r: any) => r.status === 'failed');
+      if (failed.length === 0) {
+        setError("All alerts sent successfully!");
+        triggerHaptic([50, 50, 50]);
+      } else {
+        throw new Error("Some alerts failed to send");
+      }
+    } catch (err) {
+      console.warn("Automated SMS failed, falling back to manual:", err);
+      setError("Auto-SMS failed. Opening manual SMS...");
+      window.open(`sms:${contacts.join(';')}?body=${encodeURIComponent(message)}`);
+    } finally {
+      setTimeout(() => setError(null), 5000);
+    }
   };
 
   const copyCurrentLocation = () => {

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from twilio.rest import Client
 import httpx
 import logging
 import uuid
@@ -26,6 +27,12 @@ redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
 # Rate Limiter Configuration
 limiter = Limiter(key_func=get_remote_address, storage_uri=REDIS_URL)
+
+# Twilio Configuration
+TWILIO_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE = os.getenv("TWILIO_PHONE_NUMBER")
+twilio_client = Client(TWILIO_SID, TWILIO_TOKEN) if TWILIO_SID and TWILIO_TOKEN else None
 
 # Global HTTP client with robust headers
 http_client = httpx.AsyncClient(
@@ -75,6 +82,35 @@ app.add_middleware(
 @limiter.limit("5/minute")
 async def create_session(request: Request):
     return {"session_id": str(uuid.uuid4())}
+
+@app.post("/api/send-alert-sms")
+@limiter.limit("3/minute")
+async def send_alert_sms(request: Request, data: dict):
+    if not twilio_client:
+        raise HTTPException(status_code=503, detail="SMS Service not configured on server.")
+    
+    contacts = data.get("contacts", [])
+    message_body = data.get("message", "EMERGENCY SOS: User needs immediate assistance.")
+    
+    if not contacts:
+        raise HTTPException(status_code=400, detail="No contacts provided.")
+
+    results = []
+    for phone in contacts:
+        try:
+            # Basic normalization: ensure it starts with + for Twilio
+            clean_phone = phone if phone.startswith('+') else f"+{phone.strip()}"
+            message = twilio_client.messages.create(
+                body=message_body,
+                from_=TWILIO_PHONE,
+                to=clean_phone
+            )
+            results.append({"phone": phone, "status": "sent", "sid": message.sid})
+        except Exception as e:
+            logger.error(f"Twilio Error for {phone}: {str(e)}")
+            results.append({"phone": phone, "status": "failed", "error": str(e)})
+
+    return {"results": results}
 
 async def redis_listener(websocket: WebSocket, session_id: str):
     pubsub = redis_client.pubsub()
