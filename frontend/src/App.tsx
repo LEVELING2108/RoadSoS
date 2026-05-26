@@ -99,6 +99,7 @@ function App() {
     shakeSOS: false
   });
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [showStressUI, setShowStressUI] = useState(false);
   const countdownInterval = useRef<any>(null);
   const lastShake = useRef<number>(0);
   const isMounted = useRef(true);
@@ -253,12 +254,44 @@ function App() {
     setTrackingSessionId(id);
   }, [t, setLocation]);
 
+  const saveProfile = (p: any) => { setProfile(p); localStorage.setItem('roadsos_profile', JSON.stringify(p)); };
+  const saveContacts = (c: string[]) => { setContacts(c); localStorage.setItem('roadsos_contacts', JSON.stringify(c)); };
+  
+  const sendAlerts = useCallback(async () => {
+    if (contacts.length === 0) { setShowSettings(true); return; }
+    triggerHaptic(50);
+    
+    const loc = location ? `https://www.google.com/maps?q=${location.lat},${location.lon}` : "Unknown";
+    const link = trackingSessionId ? `${window.location.origin}/?track=${trackingSessionId}` : "";
+    const message = `EMERGENCY SOS: I need help! My location: ${loc}${link ? `. Track me live: ${link}` : ''}`;
+
+    try {
+      setError("Sending background alerts...");
+      const res = await axios.post('api/send-alert-sms', { contacts, message });
+      
+      const failed = res.data.results.filter((r: any) => r.status === 'failed');
+      if (failed.length === 0) {
+        setError("All alerts sent successfully!");
+        triggerHaptic([50, 50, 50]);
+      } else {
+        throw new Error("Some alerts failed to send");
+      }
+    } catch (err) {
+      console.warn("Automated SMS failed, falling back to manual:", err);
+      setError("Auto-SMS failed. Opening manual SMS...");
+      window.open(`sms:${contacts.join(';')}?body=${encodeURIComponent(message)}`);
+    } finally {
+      setTimeout(() => setError(null), 5000);
+    }
+  }, [contacts, location, trackingSessionId, triggerHaptic]);
+
   const handleSOS = useCallback(() => {
     triggerHaptic([100, 50, 100]);
-    window.open(`tel:${emergencyConfig.combined || emergencyConfig.police}`);
+    setShowStressUI(true);
+    sendAlerts(); // Automatically trigger SMS broadcast
     setCountdown(null);
     if (countdownInterval.current) clearInterval(countdownInterval.current);
-  }, [emergencyConfig, triggerHaptic]);
+  }, [sendAlerts, triggerHaptic]);
 
   const startSOSCountdown = useCallback(() => {
     if (countdown !== null) return;
@@ -460,37 +493,6 @@ function App() {
     }
   }, [isMonitoringVitals, triggerHaptic, t]);
 
-  const saveProfile = (p: any) => { setProfile(p); localStorage.setItem('roadsos_profile', JSON.stringify(p)); };
-  const saveContacts = (c: string[]) => { setContacts(c); localStorage.setItem('roadsos_contacts', JSON.stringify(c)); };
-  
-  const sendAlerts = async () => {
-    if (contacts.length === 0) { setShowSettings(true); return; }
-    triggerHaptic(50);
-    
-    const loc = location ? `https://www.google.com/maps?q=${location.lat},${location.lon}` : "Unknown";
-    const link = trackingSessionId ? `${window.location.origin}/?track=${trackingSessionId}` : "";
-    const message = `EMERGENCY SOS: I need help! My location: ${loc}${link ? `. Track me live: ${link}` : ''}`;
-
-    try {
-      setError("Sending background alerts...");
-      const res = await axios.post('api/send-alert-sms', { contacts, message });
-      
-      const failed = res.data.results.filter((r: any) => r.status === 'failed');
-      if (failed.length === 0) {
-        setError("All alerts sent successfully!");
-        triggerHaptic([50, 50, 50]);
-      } else {
-        throw new Error("Some alerts failed to send");
-      }
-    } catch (err) {
-      console.warn("Automated SMS failed, falling back to manual:", err);
-      setError("Auto-SMS failed. Opening manual SMS...");
-      window.open(`sms:${contacts.join(';')}?body=${encodeURIComponent(message)}`);
-    } finally {
-      setTimeout(() => setError(null), 5000);
-    }
-  };
-
   const copyCurrentLocation = () => {
     if (location) {
       const loc = `${location.lat}, ${location.lon}`;
@@ -525,6 +527,50 @@ function App() {
                 style={{ background: 'white', color: 'var(--primary-red)', padding: '15px 40px', borderRadius: '30px', fontSize: '1.2rem', fontWeight: 'bold' }}
               >
                 CANCEL
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Stress-Proof Giant Dial UI */}
+      <AnimatePresence>
+        {showStressUI && (
+          <motion.div 
+            className="settings-overlay" 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }}
+            style={{ zIndex: 10000, background: 'var(--bg-app)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '2rem' }}
+          >
+            <motion.div initial={{ y: 20 }} animate={{ y: 0 }} style={{ width: '100%', maxWidth: '400px' }}>
+              <div style={{ marginBottom: '2rem' }}>
+                <ShieldAlert size={60} color="var(--primary-red)" style={{ margin: '0 auto 1rem' }} />
+                <h2 style={{ fontSize: '1.8rem', color: 'white', marginBottom: '0.5rem' }}>SOS ACTIVATED</h2>
+                <p style={{ opacity: 0.8, fontSize: '0.9rem' }}>SMS alerts are being sent to your contacts in the background.</p>
+              </div>
+
+              <motion.button 
+                onClick={() => {
+                  triggerHaptic([50, 50, 50]);
+                  window.open(`tel:${emergencyConfig.combined || emergencyConfig.police}`);
+                  setShowStressUI(false);
+                }}
+                className="sos-button"
+                style={{ width: '220px', height: '220px', margin: '0 auto 2.5rem', borderRadius: '50%', background: 'var(--primary-red)', border: '10px solid rgba(255,255,255,0.2)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 50px rgba(255, 59, 48, 0.5)' }}
+                animate={{ scale: [1, 1.05, 1] }}
+                transition={{ repeat: Infinity, duration: 1.5 }}
+              >
+                <Phone size={50} color="white" fill="white" />
+                <span style={{ color: 'white', fontWeight: 'bold', marginTop: '10px', fontSize: '1.2rem' }}>TAP TO DIAL</span>
+                <span style={{ color: 'white', fontSize: '1.5rem', fontWeight: '900' }}>{emergencyConfig.combined || emergencyConfig.police}</span>
+              </motion.button>
+
+              <button 
+                onClick={() => setShowStressUI(false)}
+                style={{ background: 'transparent', border: '1px solid var(--text-muted)', color: 'var(--text-muted)', padding: '12px 30px', borderRadius: '30px', fontSize: '0.9rem' }}
+              >
+                DISMISS
               </button>
             </motion.div>
           </motion.div>
