@@ -373,8 +373,8 @@ function App() {
             };
             fetchServices();
           },
-          (err) => console.error("GPS Init Error:", err),
-          { enableHighAccuracy: true, timeout: 10000 }
+          (err) => console.warn("GPS Init Error:", err),
+          { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
         );
       }
     };
