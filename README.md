@@ -53,6 +53,14 @@ ROADSoS is a high-performance, location-based platform designed to provide immed
 
 ---
 
+## 📚 Documentation
+
+For a deep dive into the system's inner workings, refer to our end-to-end documentation:
+- 🏗️ [**System Architecture**](./docs/ARCHITECTURE.md): Detailed breakdown of the decoupled frontend/backend, data flow, failover systems, and deployment strategy.
+- 📡 [**API Reference**](./docs/API_REFERENCE.md): Comprehensive documentation of the FastAPI REST endpoints, WebSocket connections, rate limits, and expected payloads.
+
+---
+
 ## 🚀 Tech Stack
 
 ### Frontend
