@@ -316,6 +316,54 @@ function App() {
     triggerHaptic(100);
   }, [triggerHaptic]);
 
+  // Feature: Shake to SOS Monitor
+  useEffect(() => {
+    const handleMotion = (event: DeviceMotionEvent) => {
+      if (!profile.shakeSOS || countdown !== null) return;
+      const acc = event.accelerationIncludingGravity;
+      if (!acc) return;
+      const threshold = 15;
+      const totalAcc = Math.sqrt((acc.x || 0)**2 + (acc.y || 0)**2 + (acc.z || 0)**2);
+      if (totalAcc > 5) console.log("Motion Detected:", totalAcc.toFixed(2));
+      if (totalAcc > threshold) {
+        const now = Date.now();
+        if (now - lastShake.current > 1500) { 
+          lastShake.current = now;
+          startSOSCountdown();
+        }
+      }
+    };
+
+    if (profile.shakeSOS) {
+      console.log("Shake SOS Monitoring Activated");
+      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+        (DeviceMotionEvent as any).requestPermission().catch(console.error);
+      }
+      window.addEventListener('devicemotion', handleMotion);
+    }
+    return () => window.removeEventListener('devicemotion', handleMotion);
+  }, [profile.shakeSOS, countdown, startSOSCountdown]);
+
+  // Feature: Regional Language Auto-Scan
+  useEffect(() => {
+    if (profile.scanLanguage && location && countryCode === 'IN') {
+      const getRegion = async () => {
+        try {
+          const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.lat}&lon=${location.lon}`);
+          const state = res.data.address?.state;
+          if (state) {
+            const regionalLang = STATE_LANGUAGE_MAP[state];
+            if (regionalLang && regionalLang !== i18n.language) {
+              console.log(`Auto-switching to regional language: ${regionalLang} for ${state}`);
+              i18n.changeLanguage(regionalLang);
+            }
+          }
+        } catch (e) { console.error("Language Scan Error:", e); }
+      };
+      getRegion();
+    }
+  }, [profile.scanLanguage, location, countryCode, i18n]);
+
   useEffect(() => {
     isMounted.current = true;
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -346,35 +394,6 @@ function App() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // Shake Detection logic
-    const handleMotion = (event: DeviceMotionEvent) => {
-      if (!profile.shakeSOS || countdown !== null) return;
-      
-      const acc = event.accelerationIncludingGravity;
-      if (!acc) return;
-
-      const threshold = 15; // Refined threshold for Android/iOS (G is ~9.8)
-      const totalAcc = Math.sqrt((acc.x || 0)**2 + (acc.y || 0)**2 + (acc.z || 0)**2);
-      
-      // Debug log to help tune sensitivity on different devices
-      if (totalAcc > 5) console.log("Motion Detected:", totalAcc.toFixed(2));
-
-      if (totalAcc > threshold) {
-        const now = Date.now();
-        if (now - lastShake.current > 1000) { 
-          lastShake.current = now;
-          startSOSCountdown();
-        }
-      }
-    };
-
-    if (profile.shakeSOS) {
-      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-        (DeviceMotionEvent as any).requestPermission();
-      }
-      window.addEventListener('devicemotion', handleMotion);
-    }
-
     const cached = ['roadsos_cache', 'roadsos_contacts', 'roadsos_profile'].map(k => localStorage.getItem(k));
     if (cached[0]) setServices(JSON.parse(cached[0]));
     if (cached[1]) setContacts(JSON.parse(cached[1]));
@@ -388,10 +407,9 @@ function App() {
       isMounted.current = false;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('devicemotion', handleMotion);
       if (ws.current) ws.current.close();
     };
-  }, [i18n.language, t, isListening, fetchLocation, joinTrackingSession, speak, triggerHaptic, handleSOS, profile.shakeSOS, startSOSCountdown]);
+  }, [i18n.language, t, isListening, fetchLocation, joinTrackingSession, speak, triggerHaptic, handleSOS]);
 
   const filteredServices = useMemo(() => {
     return services.filter(s => {
