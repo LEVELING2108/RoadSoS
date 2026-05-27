@@ -222,22 +222,6 @@ function App() {
     }
   }, [t, fetchRegionInfo, startTracking, setLocation]);
 
-  const fetchLocation = useCallback(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (isMounted.current) {
-            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            setLocation(newLoc);
-            fetchRegionInfo(newLoc.lat, newLoc.lon);
-          }
-        },
-        (err) => { if (isMounted.current) setError(err.code === 1 ? t('location_blocked') : t('gps_lost')); },
-        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
-      );
-    }
-  }, [fetchRegionInfo, t, setLocation]);
-
   const joinTrackingSession = useCallback((id: string) => {
     const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
     const wsHost = API_URL.replace(/^https?:\/\//, '');
@@ -316,56 +300,9 @@ function App() {
     triggerHaptic(100);
   }, [triggerHaptic]);
 
-  // Feature: Shake to SOS Monitor
-  useEffect(() => {
-    const handleMotion = (event: DeviceMotionEvent) => {
-      if (!profile.shakeSOS || countdown !== null) return;
-      const acc = event.accelerationIncludingGravity;
-      if (!acc) return;
-      const threshold = 15;
-      const totalAcc = Math.sqrt((acc.x || 0)**2 + (acc.y || 0)**2 + (acc.z || 0)**2);
-      if (totalAcc > 5) console.log("Motion Detected:", totalAcc.toFixed(2));
-      if (totalAcc > threshold) {
-        const now = Date.now();
-        if (now - lastShake.current > 1500) { 
-          lastShake.current = now;
-          startSOSCountdown();
-        }
-      }
-    };
-
-    if (profile.shakeSOS) {
-      console.log("Shake SOS Monitoring Activated");
-      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
-        (DeviceMotionEvent as any).requestPermission().catch(console.error);
-      }
-      window.addEventListener('devicemotion', handleMotion);
-    }
-    return () => window.removeEventListener('devicemotion', handleMotion);
-  }, [profile.shakeSOS, countdown, startSOSCountdown]);
-
-  // Feature: Regional Language Auto-Scan
-  useEffect(() => {
-    if (profile.scanLanguage && location && countryCode === 'IN') {
-      const getRegion = async () => {
-        try {
-          const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${location.lat}&lon=${location.lon}`);
-          const state = res.data.address?.state;
-          if (state) {
-            const regionalLang = STATE_LANGUAGE_MAP[state];
-            if (regionalLang && regionalLang !== i18n.language) {
-              console.log(`Auto-switching to regional language: ${regionalLang} for ${state}`);
-              i18n.changeLanguage(regionalLang);
-            }
-          }
-        } catch (e) { console.error("Language Scan Error:", e); }
-      };
-      getRegion();
-    }
-  }, [profile.scanLanguage, location, countryCode, i18n]);
-
   useEffect(() => {
     isMounted.current = true;
+    
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       setIsSupported(true);
@@ -374,12 +311,8 @@ function App() {
       recognition.interimResults = true;
       recognition.lang = i18n.language;
       recognition.onresult = (event: any) => {
-        const transcript = Array.from(event.results)
-          .map((result: any) => result[0])
-          .map((result) => result.transcript)
-          .join('').toLowerCase();
-        const trigger = t('sos').toLowerCase();
-        if (transcript.includes(trigger)) {
+        const transcript = Array.from(event.results).map((r: any) => r[0].transcript).join('').toLowerCase();
+        if (transcript.includes(t('sos').toLowerCase())) {
           triggerHaptic([500, 200, 500]);
           handleSOS();
           speak(t('voice_sos_active'));
@@ -394,22 +327,70 @@ function App() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
+    // Shake Detection
+    const handleMotion = (event: DeviceMotionEvent) => {
+      if (!profile.shakeSOS || countdown !== null) return;
+      const acc = event.accelerationIncludingGravity;
+      if (!acc) return;
+      const threshold = 15;
+      const totalAcc = Math.sqrt((acc.x || 0)**2 + (acc.y || 0)**2 + (acc.z || 0)**2);
+      if (totalAcc > threshold) {
+        const now = Date.now();
+        if (now - lastShake.current > 1500) { 
+          lastShake.current = now;
+          startSOSCountdown();
+        }
+      }
+    };
+    if (profile.shakeSOS) {
+      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') (DeviceMotionEvent as any).requestPermission().catch(console.error);
+      window.addEventListener('devicemotion', handleMotion);
+    }
+
+    // Initial Load & Caching
     const cached = ['roadsos_cache', 'roadsos_contacts', 'roadsos_profile'].map(k => localStorage.getItem(k));
     if (cached[0]) setServices(JSON.parse(cached[0]));
     if (cached[1]) setContacts(JSON.parse(cached[1]));
     if (cached[2]) setProfile(JSON.parse(cached[2]));
 
-    fetchLocation();
-    const trackId = new URLSearchParams(window.location.search).get('track');
-    if (trackId) joinTrackingSession(trackId);
-
-    return () => {
-      isMounted.current = false;
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-      if (ws.current) ws.current.close();
+    // GPS & Syncing Fix: Ensure aggressive initial fetch
+    const initGPS = () => {
+      if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            setLocation(newLoc);
+            fetchRegionInfo(newLoc.lat, newLoc.lon);
+            // Auto-sync services on load
+            const fetchServices = async () => {
+              try {
+                const res = await axios.get(`api/emergency-services?lat=${newLoc.lat}&lon=${newLoc.lon}&radius=5000`);
+                if (isMounted.current) {
+                  setServices(res.data.services);
+                  localStorage.setItem('roadsos_cache', JSON.stringify(res.data.services));
+                }
+              } catch (e) { console.error("Initial Sync Error:", e); }
+            };
+            fetchServices();
+          },
+          (err) => console.error("GPS Init Error:", err),
+          { enableHighAccuracy: true, timeout: 10000 }
+        );
+      }
     };
-  }, [i18n.language, t, isListening, fetchLocation, joinTrackingSession, speak, triggerHaptic, handleSOS]);
+    initGPS();
+const trackId = new URLSearchParams(window.location.search).get('track');
+if (trackId) joinTrackingSession(trackId);
+
+return () => {
+  isMounted.current = false;
+  window.removeEventListener('online', handleOnline);
+  window.removeEventListener('offline', handleOffline);
+  window.removeEventListener('devicemotion', handleMotion);
+  if (ws.current) ws.current.close();
+};
+}, [i18n.language, t, isListening, fetchRegionInfo, joinTrackingSession, speak, triggerHaptic, handleSOS, profile.shakeSOS, startSOSCountdown, setLocation]);
+
 
   const filteredServices = useMemo(() => {
     return services.filter(s => {
