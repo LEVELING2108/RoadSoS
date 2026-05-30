@@ -11,3 +11,4 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 GEMINI.md
+SESSION_RESUME.md
