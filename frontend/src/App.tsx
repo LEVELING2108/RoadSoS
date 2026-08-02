@@ -175,6 +175,54 @@ function App() {
     } catch (e) { console.error("Tracking Session Error:", e); }
   }, [setLocation]);
 
+  const fetchDirectOverpassFallback = useCallback(async (lat: number, lon: number): Promise<Service[]> => {
+    const query = `[out:json][timeout:15];nwr(around:5000,${lat},${lon})["amenity"~"hospital|clinic|doctors|pharmacy|police|fire_station"];out center;`;
+    const endpoints = [
+      "https://overpass-api.de/api/interpreter",
+      "https://overpass.kumi.systems/api/interpreter",
+      "https://lz4.overpass-api.de/api/interpreter"
+    ];
+    
+    for (const ep of endpoints) {
+      try {
+        const res = await axios.post(ep, `data=${encodeURIComponent(query)}`, {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          timeout: 12000
+        });
+        const elements = res.data?.elements || [];
+        if (elements.length > 0) {
+          const parsed: Service[] = [];
+          const seen = new Set();
+          for (const el of elements) {
+            if (seen.has(el.id)) continue;
+            seen.add(el.id);
+            const tags = el.tags || {};
+            const category = tags.amenity || tags.shop || tags.emergency || tags.healthcare;
+            if (!category) continue;
+            const isTrauma = (tags["healthcare:speciality"] || "").toLowerCase().includes("trauma") || tags.emergency === "yes";
+            const isShowroom = ["car", "motorcycle"].includes(tags.shop || "");
+            parsed.push({
+              id: el.id,
+              name: tags.name || `Nearby ${category.replace("_", " ").toUpperCase()}`,
+              category: category,
+              type: isTrauma ? "trauma_center" : (isShowroom ? "showroom" : category),
+              phone: tags.phone || tags["contact:phone"] || tags["emergency:phone"],
+              lat: el.lat || (el.center && el.center.lat),
+              lon: el.lon || (el.center && el.center.lon),
+              address: tags["addr:full"] || `${tags["addr:street"] || ""} ${tags["addr:housenumber"] || ""}`.trim() || undefined,
+              is_recommended: isTrauma
+            });
+          }
+          parsed.sort((a, b) => (b.is_recommended ? 1 : 0) - (a.is_recommended ? 1 : 0));
+          return parsed;
+        }
+      } catch (e) {
+        console.warn("Direct Overpass fetch attempt failed on endpoint:", ep, e);
+      }
+    }
+    return [];
+  }, []);
+
   const getEmergencyServices = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -183,10 +231,21 @@ function App() {
       try {
         fetchRegionInfo(lat, lon);
         startTracking(lat, lon);
-        const servicesRes = await axios.get(`api/emergency-services?lat=${lat}&lon=${lon}&radius=5000`);
+        let fetchedServices: Service[] = [];
+        try {
+          const servicesRes = await axios.get(`api/emergency-services?lat=${lat}&lon=${lon}&radius=5000`);
+          fetchedServices = servicesRes.data.services;
+        } catch (backendErr) {
+          console.warn("Backend API unavailable, executing client-side Overpass fallback...", backendErr);
+          fetchedServices = await fetchDirectOverpassFallback(lat, lon);
+          if (fetchedServices.length === 0) {
+            throw backendErr;
+          }
+        }
+
         if (isMounted.current) {
-          setServices(servicesRes.data.services);
-          localStorage.setItem('roadsos_cache', JSON.stringify(servicesRes.data.services));
+          setServices(fetchedServices);
+          localStorage.setItem('roadsos_cache', JSON.stringify(fetchedServices));
         }
       } catch (err: any) {
         console.error("Fetch Services Error:", err);
@@ -219,7 +278,7 @@ function App() {
       setError("Geolocation not supported");
       setLoading(false);
     }
-  }, [t, fetchRegionInfo, startTracking, setLocation]);
+  }, [t, fetchRegionInfo, startTracking, setLocation, fetchDirectOverpassFallback]);
 
   const fetchLocation = useCallback(() => {
     if ("geolocation" in navigator) {
