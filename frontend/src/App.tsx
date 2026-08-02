@@ -24,6 +24,7 @@ import {
 import { FIRST_AID_DATA } from './data/firstAid';
 import { getEmergencyConfig } from './data/emergencyNumbers';
 import type { EmergencyConfig } from './data/emergencyNumbers';
+import { Geolocation } from '@capacitor/geolocation';
 import './App.css';
 
 // Lazy load heavy Map component
@@ -223,9 +224,62 @@ function App() {
     return [];
   }, []);
 
+  const getDeviceLocation = useCallback(async (): Promise<{ lat: number, lon: number } | null> => {
+    try {
+      const position = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: false,
+        timeout: 4000,
+        maximumAge: 30000
+      });
+      if (position?.coords) {
+        return { lat: position.coords.latitude, lon: position.coords.longitude };
+      }
+    } catch (e) {
+      console.warn("Native Geolocation error/fallback to Web API:", e);
+    }
+
+    return new Promise((resolve) => {
+      if ("geolocation" in navigator) {
+        let resolved = false;
+        const timer = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            resolve(locationRef.current);
+          }
+        }, 4000);
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timer);
+              resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+            }
+          },
+          () => {
+            if (!resolved) {
+              resolved = true;
+              clearTimeout(timer);
+              resolve(locationRef.current);
+            }
+          },
+          { enableHighAccuracy: false, timeout: 4000, maximumAge: 30000 }
+        );
+      } else {
+        resolve(locationRef.current);
+      }
+    });
+  }, []);
+
   const getEmergencyServices = useCallback(async () => {
     setLoading(true);
     setError(null);
+
+    const safetyTimer = setTimeout(() => {
+      if (isMounted.current) {
+        setLoading(false);
+      }
+    }, 6000);
     
     const fetchWithCoords = async (lat: number, lon: number) => {
       try {
@@ -251,50 +305,31 @@ function App() {
         console.error("Fetch Services Error:", err);
         if (isMounted.current) setError(`${t('offline_notice')}`);
       } finally {
+        clearTimeout(safetyTimer);
         if (isMounted.current) setLoading(false);
       }
     };
 
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-          if (isMounted.current) setLocation(newLoc);
-          fetchWithCoords(newLoc.lat, newLoc.lon);
-        },
-        (err) => {
-          const cachedLoc = locationRef.current;
-          if (cachedLoc) fetchWithCoords(cachedLoc.lat, cachedLoc.lon);
-          else if (isMounted.current) {
-            setError(err.code === 3 ? t('gps_lost') : t('location_blocked'));
-            setLoading(false);
-          }
-        },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
-      );
-    } else if (locationRef.current) {
-      await fetchWithCoords(locationRef.current.lat, locationRef.current.lon);
+    const targetLoc = await getDeviceLocation();
+    if (targetLoc) {
+      if (isMounted.current) setLocation(targetLoc);
+      await fetchWithCoords(targetLoc.lat, targetLoc.lon);
     } else {
-      setError("Geolocation not supported");
-      setLoading(false);
+      clearTimeout(safetyTimer);
+      if (isMounted.current) {
+        setError(t('gps_lost'));
+        setLoading(false);
+      }
     }
-  }, [t, fetchRegionInfo, startTracking, setLocation, fetchDirectOverpassFallback]);
+  }, [t, fetchRegionInfo, startTracking, setLocation, fetchDirectOverpassFallback, getDeviceLocation]);
 
-  const fetchLocation = useCallback(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (isMounted.current) {
-            const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            setLocation(newLoc);
-            fetchRegionInfo(newLoc.lat, newLoc.lon);
-          }
-        },
-        (err) => { if (isMounted.current) setError(err.code === 1 ? t('location_blocked') : t('gps_lost')); },
-        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
-      );
+  const fetchLocation = useCallback(async () => {
+    const loc = await getDeviceLocation();
+    if (loc && isMounted.current) {
+      setLocation(loc);
+      fetchRegionInfo(loc.lat, loc.lon);
     }
-  }, [fetchRegionInfo, t, setLocation]);
+  }, [getDeviceLocation, fetchRegionInfo, setLocation]);
 
   const joinTrackingSession = useCallback((id: string) => {
     const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
