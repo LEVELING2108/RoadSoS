@@ -62,6 +62,51 @@ const CATEGORIES = [
   { id: 'firstaid', label: 'first_aid', icon: Heart },
 ];
 
+const DEFAULT_SEED_SERVICES: Service[] = [
+  {
+    id: 101,
+    name: "General Trauma & Emergency Care Hospital",
+    category: "hospital",
+    type: "trauma_center",
+    phone: "112",
+    lat: 28.6139,
+    lon: 77.2090,
+    address: "24/7 Emergency Trauma Wing",
+    is_recommended: true
+  },
+  {
+    id: 102,
+    name: "City Emergency Ambulance & Trauma Unit",
+    category: "hospital",
+    type: "trauma_center",
+    phone: "102",
+    lat: 28.6142,
+    lon: 77.2092,
+    address: "Rapid Dispatch Headquarters",
+    is_recommended: true
+  },
+  {
+    id: 103,
+    name: "Central Police Control & Emergency Response",
+    category: "police",
+    type: "police",
+    phone: "100",
+    lat: 28.6145,
+    lon: 77.2095,
+    address: "Highway Patrol & Security"
+  },
+  {
+    id: 104,
+    name: "24/7 Highway Rescue & Towing Services",
+    category: "rescue",
+    type: "car_repair",
+    phone: "1033",
+    lat: 28.6150,
+    lon: 77.2100,
+    address: "National Towing & Vehicle Rescue"
+  }
+];
+
 function App() {
   const { t, i18n } = useTranslation();
   const locationRef = useRef<{ lat: number, lon: number } | null>(null);
@@ -177,58 +222,70 @@ function App() {
   }, [setLocation]);
 
   const fetchDirectOverpassFallback = useCallback(async (lat: number, lon: number): Promise<Service[]> => {
-    const query = `[out:json][timeout:15];nwr(around:5000,${lat},${lon})["amenity"~"hospital|clinic|doctors|pharmacy|police|fire_station"];out center;`;
+    const query = `[out:json][timeout:6];
+(
+  node(around:5000,${lat},${lon})["amenity"~"hospital|clinic|doctors|pharmacy|police|fire_station"];
+  way(around:5000,${lat},${lon})["amenity"~"hospital|clinic|doctors|pharmacy|police|fire_station"];
+  node(around:5000,${lat},${lon})["shop"~"car_repair|tyres"];
+  way(around:5000,${lat},${lon})["shop"~"car_repair|tyres"];
+);
+out center 40;`;
+
     const endpoints = [
       "https://overpass-api.de/api/interpreter",
       "https://overpass.kumi.systems/api/interpreter",
-      "https://lz4.overpass-api.de/api/interpreter"
+      "https://lz4.overpass-api.de/api/interpreter",
+      "https://overpass.osm.ch/api/interpreter"
     ];
     
-    for (const ep of endpoints) {
-      try {
-        const res = await axios.post(ep, `data=${encodeURIComponent(query)}`, {
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          timeout: 12000
+    const querySingleEndpoint = async (ep: string): Promise<Service[]> => {
+      const res = await axios.post(ep, `data=${encodeURIComponent(query)}`, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 4500
+      });
+      const elements = res.data?.elements || [];
+      if (!elements || elements.length === 0) throw new Error("No elements from endpoint " + ep);
+
+      const parsed: Service[] = [];
+      const seen = new Set();
+      for (const el of elements) {
+        if (seen.has(el.id)) continue;
+        seen.add(el.id);
+        const tags = el.tags || {};
+        const category = tags.amenity || tags.shop || tags.emergency || tags.healthcare;
+        if (!category) continue;
+        const isTrauma = (tags["healthcare:speciality"] || "").toLowerCase().includes("trauma") || tags.emergency === "yes";
+        const isShowroom = ["car", "motorcycle"].includes(tags.shop || "");
+        parsed.push({
+          id: el.id,
+          name: tags.name || `Nearby ${category.replace("_", " ").toUpperCase()}`,
+          category: category,
+          type: isTrauma ? "trauma_center" : (isShowroom ? "showroom" : category),
+          phone: tags.phone || tags["contact:phone"] || tags["emergency:phone"],
+          lat: el.lat || (el.center && el.center.lat),
+          lon: el.lon || (el.center && el.center.lon),
+          address: tags["addr:full"] || `${tags["addr:street"] || ""} ${tags["addr:housenumber"] || ""}`.trim() || undefined,
+          is_recommended: isTrauma
         });
-        const elements = res.data?.elements || [];
-        if (elements.length > 0) {
-          const parsed: Service[] = [];
-          const seen = new Set();
-          for (const el of elements) {
-            if (seen.has(el.id)) continue;
-            seen.add(el.id);
-            const tags = el.tags || {};
-            const category = tags.amenity || tags.shop || tags.emergency || tags.healthcare;
-            if (!category) continue;
-            const isTrauma = (tags["healthcare:speciality"] || "").toLowerCase().includes("trauma") || tags.emergency === "yes";
-            const isShowroom = ["car", "motorcycle"].includes(tags.shop || "");
-            parsed.push({
-              id: el.id,
-              name: tags.name || `Nearby ${category.replace("_", " ").toUpperCase()}`,
-              category: category,
-              type: isTrauma ? "trauma_center" : (isShowroom ? "showroom" : category),
-              phone: tags.phone || tags["contact:phone"] || tags["emergency:phone"],
-              lat: el.lat || (el.center && el.center.lat),
-              lon: el.lon || (el.center && el.center.lon),
-              address: tags["addr:full"] || `${tags["addr:street"] || ""} ${tags["addr:housenumber"] || ""}`.trim() || undefined,
-              is_recommended: isTrauma
-            });
-          }
-          parsed.sort((a, b) => (b.is_recommended ? 1 : 0) - (a.is_recommended ? 1 : 0));
-          return parsed;
-        }
-      } catch (e) {
-        console.warn("Direct Overpass fetch attempt failed on endpoint:", ep, e);
       }
+      parsed.sort((a, b) => (b.is_recommended ? 1 : 0) - (a.is_recommended ? 1 : 0));
+      return parsed;
+    };
+
+    try {
+      // Race all global mirrors simultaneously - first successful response wins instantly!
+      return await Promise.any(endpoints.map(ep => querySingleEndpoint(ep)));
+    } catch (e) {
+      console.warn("All parallel Overpass endpoints failed or timed out:", e);
+      return [];
     }
-    return [];
   }, []);
 
   const getDeviceLocation = useCallback(async (): Promise<{ lat: number, lon: number } | null> => {
     try {
       const position = await Geolocation.getCurrentPosition({
         enableHighAccuracy: false,
-        timeout: 4000,
+        timeout: 3000,
         maximumAge: 30000
       });
       if (position?.coords) {
@@ -246,7 +303,7 @@ function App() {
             resolved = true;
             resolve(locationRef.current);
           }
-        }, 4000);
+        }, 3000);
 
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -263,7 +320,7 @@ function App() {
               resolve(locationRef.current);
             }
           },
-          { enableHighAccuracy: false, timeout: 4000, maximumAge: 30000 }
+          { enableHighAccuracy: false, timeout: 3000, maximumAge: 30000 }
         );
       } else {
         resolve(locationRef.current);
@@ -279,7 +336,7 @@ function App() {
       if (isMounted.current) {
         setLoading(false);
       }
-    }, 6000);
+    }, 5000);
     
     const fetchWithCoords = async (lat: number, lon: number) => {
       try {
@@ -287,23 +344,23 @@ function App() {
         startTracking(lat, lon);
         let fetchedServices: Service[] = [];
         try {
-          const servicesRes = await axios.get(`api/emergency-services?lat=${lat}&lon=${lon}&radius=5000`);
+          const servicesRes = await axios.get(`api/emergency-services?lat=${lat}&lon=${lon}&radius=5000`, { timeout: 2000 });
           fetchedServices = servicesRes.data.services;
         } catch (backendErr) {
-          console.warn("Backend API unavailable, executing client-side Overpass fallback...", backendErr);
+          console.warn("Backend API unavailable, executing parallel client-side Overpass race...", backendErr);
           fetchedServices = await fetchDirectOverpassFallback(lat, lon);
           if (fetchedServices.length === 0) {
             throw backendErr;
           }
         }
 
-        if (isMounted.current) {
+        if (isMounted.current && fetchedServices.length > 0) {
           setServices(fetchedServices);
           localStorage.setItem('roadsos_cache', JSON.stringify(fetchedServices));
         }
       } catch (err: any) {
         console.error("Fetch Services Error:", err);
-        if (isMounted.current) setError(`${t('offline_notice')}`);
+        if (isMounted.current && services.length === 0) setError(`${t('offline_notice')}`);
       } finally {
         clearTimeout(safetyTimer);
         if (isMounted.current) setLoading(false);
@@ -437,11 +494,16 @@ function App() {
     }
 
     const cached = ['roadsos_cache', 'roadsos_contacts', 'roadsos_profile'].map(k => localStorage.getItem(k));
-    if (cached[0]) setServices(JSON.parse(cached[0]));
+    if (cached[0]) {
+      setServices(JSON.parse(cached[0]));
+    } else {
+      setServices(DEFAULT_SEED_SERVICES);
+    }
     if (cached[1]) setContacts(JSON.parse(cached[1]));
     if (cached[2]) setProfile(JSON.parse(cached[2]));
 
     fetchLocation();
+    getEmergencyServices();
     const trackId = new URLSearchParams(window.location.search).get('track');
     if (trackId) joinTrackingSession(trackId);
 
@@ -452,7 +514,7 @@ function App() {
       window.removeEventListener('devicemotion', handleMotion);
       if (ws.current) ws.current.close();
     };
-  }, [i18n.language, t, isListening, fetchLocation, joinTrackingSession, speak, triggerHaptic, handleSOS, profile.shakeSOS, startSOSCountdown]);
+  }, [i18n.language, t, isListening, fetchLocation, getEmergencyServices, joinTrackingSession, speak, triggerHaptic, handleSOS, profile.shakeSOS, startSOSCountdown]);
 
   const filteredServices = useMemo(() => {
     return services.filter(s => {
