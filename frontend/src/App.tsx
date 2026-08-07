@@ -53,6 +53,8 @@ interface Service {
   image?: string;
   opening_hours?: string;
   is_recommended?: boolean;
+  distance?: number;
+  is_nearest?: boolean;
 }
 
 const CATEGORIES = [
@@ -150,6 +152,9 @@ function App() {
   const isMounted = useRef(true);
   const ws = useRef<WebSocket | null>(null);
   const recognitionRef = useRef<any>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+  const watchIdRef = useRef<number | null>(null);
 
   const STATE_LANGUAGE_MAP: Record<string, string> = {
     'Andhra Pradesh': 'te', 'Arunachal Pradesh': 'en', 'Assam': 'as', 'Bihar': 'hi',
@@ -201,12 +206,15 @@ function App() {
       const id = res.data.session_id;
       setTrackingSessionId(id);
       const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
-      const wsHost = API_URL.replace(/^https?:\/\//, '');
+      const wsHost = API_URL.replace(/^https?:\/\//, '').replace(/\/$/, '');
       const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/track/${id}`);
       socket.onopen = () => socket.send(JSON.stringify({ lat, lon }));
       ws.current = socket;
       if ("geolocation" in navigator) {
-        navigator.geolocation.watchPosition(
+        if (watchIdRef.current !== null) {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+        }
+        watchIdRef.current = navigator.geolocation.watchPosition(
           (pos) => {
             const newLoc = { lat: pos.coords.latitude, lon: pos.coords.longitude };
             if (isMounted.current) setLocation(newLoc);
@@ -220,6 +228,18 @@ function App() {
       }
     } catch (e) { console.error("Tracking Session Error:", e); }
   }, [setLocation]);
+
+  const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Math.round(R * c * 10) / 10;
+  };
 
   const fetchDirectOverpassFallback = useCallback(async (lat: number, lon: number): Promise<Service[]> => {
     const query = `[out:json][timeout:6];
@@ -241,7 +261,7 @@ out center 40;`;
     const querySingleEndpoint = async (ep: string): Promise<Service[]> => {
       const res = await axios.post(ep, `data=${encodeURIComponent(query)}`, {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        timeout: 4500
+        timeout: 3500
       });
       const elements = res.data?.elements || [];
       if (!elements || elements.length === 0) throw new Error("No elements from endpoint " + ep);
@@ -254,7 +274,14 @@ out center 40;`;
         const tags = el.tags || {};
         const category = tags.amenity || tags.shop || tags.emergency || tags.healthcare;
         if (!category) continue;
-        const isTrauma = (tags["healthcare:speciality"] || "").toLowerCase().includes("trauma") || tags.emergency === "yes";
+        const sLat = el.lat || (el.center && el.center.lat);
+        const sLon = el.lon || (el.center && el.center.lon);
+        if (!sLat || !sLon) continue;
+
+        const dist = calculateDistance(lat, lon, sLat, sLon);
+        const isTrauma = (tags["healthcare:speciality"] || "").toLowerCase().includes("trauma") || 
+                         tags.emergency === "yes" || 
+                         (tags["healthcare"] || "").toLowerCase().includes("hospital");
         const isShowroom = ["car", "motorcycle"].includes(tags.shop || "");
         parsed.push({
           id: el.id,
@@ -262,13 +289,25 @@ out center 40;`;
           category: category,
           type: isTrauma ? "trauma_center" : (isShowroom ? "showroom" : category),
           phone: tags.phone || tags["contact:phone"] || tags["emergency:phone"],
-          lat: el.lat || (el.center && el.center.lat),
-          lon: el.lon || (el.center && el.center.lon),
+          lat: sLat,
+          lon: sLon,
           address: tags["addr:full"] || `${tags["addr:street"] || ""} ${tags["addr:housenumber"] || ""}`.trim() || undefined,
-          is_recommended: isTrauma
+          is_recommended: isTrauma,
+          distance: dist
         });
       }
-      parsed.sort((a, b) => (b.is_recommended ? 1 : 0) - (a.is_recommended ? 1 : 0));
+      
+      // Sort by Trauma Priority first (closest trauma center top), then strictly by proximity distance
+      parsed.sort((a, b) => {
+        if (a.is_recommended !== b.is_recommended) {
+          return a.is_recommended ? -1 : 1;
+        }
+        return (a.distance || 0) - (b.distance || 0);
+      });
+
+      if (parsed.length > 0) {
+        parsed[0].is_nearest = true;
+      }
       return parsed;
     };
 
@@ -390,7 +429,7 @@ out center 40;`;
 
   const joinTrackingSession = useCallback((id: string) => {
     const wsProtocol = API_URL.startsWith('https') ? 'wss:' : 'ws:';
-    const wsHost = API_URL.replace(/^https?:\/\//, '');
+    const wsHost = API_URL.replace(/^https?:\/\//, '').replace(/\/$/, '');
     const socket = new WebSocket(`${wsProtocol}//${wsHost}/ws/track/${id}`);
     socket.onmessage = (e) => {
       const data = JSON.parse(e.data);
@@ -513,6 +552,16 @@ out center 40;`;
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('devicemotion', handleMotion);
       if (ws.current) ws.current.close();
+      if (watchIdRef.current !== null && "geolocation" in navigator) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+      if (animFrameRef.current !== null) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
     };
   }, [i18n.language, t, isListening, fetchLocation, getEmergencyServices, joinTrackingSession, speak, triggerHaptic, handleSOS, profile.shakeSOS, startSOSCountdown]);
 
@@ -567,15 +616,28 @@ out center 40;`;
     triggerHaptic(50);
   }, [trackingSessionId, triggerHaptic]);
 
+  const stopVitalsMonitoring = useCallback(() => {
+    if (animFrameRef.current !== null) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    setIsMonitoringVitals(false);
+    setHeartRate(null);
+    setVitalsHistory([]);
+  }, []);
+
   const toggleVitalsMonitoring = useCallback(async () => {
     if (isMonitoringVitals) {
-      setIsMonitoringVitals(false);
-      setHeartRate(null);
-      setVitalsHistory([]);
+      stopVitalsMonitoring();
       return;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      streamRef.current = stream;
       setIsMonitoringVitals(true);
       triggerHaptic(50);
       const video = document.createElement('video');
@@ -586,7 +648,7 @@ out center 40;`;
       const samples: number[] = [];
       let lastTime = Date.now();
       const processFrame = () => {
-        if (!isMounted.current || !stream.active) return;
+        if (!isMounted.current || !stream.active || !streamRef.current) return;
         if (video.readyState === video.HAVE_ENOUGH_DATA && ctx) {
           canvas.width = 100; canvas.height = 100;
           ctx.drawImage(video, 25, 25, 50, 50, 0, 0, 100, 100);
@@ -606,15 +668,16 @@ out center 40;`;
             lastTime = now;
           }
         }
-        if (isMounted.current) requestAnimationFrame(processFrame);
-        else stream.getTracks().forEach(t => t.stop());
+        if (isMounted.current && streamRef.current) {
+          animFrameRef.current = requestAnimationFrame(processFrame);
+        }
       };
-      requestAnimationFrame(processFrame);
+      animFrameRef.current = requestAnimationFrame(processFrame);
     } catch (err) { 
       console.error("Vitals Monitor Error:", err);
       setError(t('camera_blocked')); 
     }
-  }, [isMonitoringVitals, triggerHaptic, t]);
+  }, [isMonitoringVitals, stopVitalsMonitoring, triggerHaptic, t]);
 
   const saveProfile = (p: any) => { setProfile(p); localStorage.setItem('roadsos_profile', JSON.stringify(p)); };
   const saveContacts = (c: string[]) => { setContacts(c); localStorage.setItem('roadsos_contacts', JSON.stringify(c)); };

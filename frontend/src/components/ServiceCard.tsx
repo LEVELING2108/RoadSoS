@@ -14,6 +14,8 @@ interface Service {
   image?: string;
   opening_hours?: string;
   is_recommended?: boolean;
+  distance?: number;
+  is_nearest?: boolean;
 }
 
 interface ServiceCardProps {
@@ -38,6 +40,12 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const formatDistance = (dist?: number) => {
+    if (dist === undefined || dist === null) return null;
+    if (dist < 1) return `${Math.round(dist * 1000)} m away`;
+    return `${dist.toFixed(1)} km away`;
+  };
+
   return (
     <motion.div 
       className="service-card" 
@@ -52,6 +60,9 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
       </div>
       <div className="service-details">
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '0.5rem' }}>
+          {service.is_nearest && (
+            <span className="badge recommended-badge" style={{ background: '#FF9500', color: '#fff' }}>⚡ Nearest</span>
+          )}
           {service.type === 'trauma_center' && (
             <span className="badge trauma-badge">{t('trauma_center')}</span>
           )}
@@ -60,6 +71,11 @@ const ServiceCard: React.FC<ServiceCardProps> = ({
           )}
           {service.type === 'showroom' && (
             <span className="badge showroom-badge">{t('showroom')}</span>
+          )}
+          {service.distance !== undefined && (
+            <span className="badge" style={{ background: 'var(--card-bg)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+              📍 {formatDistance(service.distance)}
+            </span>
           )}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>

@@ -86,8 +86,14 @@ async def redis_listener(websocket: WebSocket, session_id: str):
     except Exception as e:
         logger.error(f"Redis Listener Error: {e}")
     finally:
-        await pubsub.unsubscribe(f"track:{session_id}")
-        await pubsub.close()
+        try:
+            await pubsub.unsubscribe(f"track:{session_id}")
+        except Exception:
+            pass
+        try:
+            await pubsub.close()
+        except Exception:
+            pass
 
 @app.websocket("/ws/track/{session_id}")
 async def websocket_endpoint(websocket: WebSocket, session_id: str):
@@ -124,7 +130,7 @@ async def fetch_parallel(query: str, endpoint_idx: int):
 
     try:
         logger.info(f"Querying {endpoint}...")
-        response = await http_client.post(endpoint, data={"data": query}, timeout=15.0)
+        response = await http_client.post(endpoint, data={"data": query}, timeout=10.0)
         
         if response.status_code == 200:
             MIRROR_STATUS[endpoint]["fails"] = 0
@@ -141,7 +147,7 @@ async def fetch_parallel(query: str, endpoint_idx: int):
     except httpx.TimeoutException:
         MIRROR_STATUS[endpoint]["fails"] += 1
         MIRROR_STATUS[endpoint]["last_error"] = "Timeout"
-        logger.error(f"Error from {endpoint}: Request Timeout (15s)")
+        logger.error(f"Error from {endpoint}: Request Timeout (10s)")
         return []
     except httpx.ConnectError:
         MIRROR_STATUS[endpoint]["fails"] += 1
@@ -154,6 +160,17 @@ async def fetch_parallel(query: str, endpoint_idx: int):
         MIRROR_STATUS[endpoint]["last_error"] = err_name
         logger.error(f"Error from {endpoint}: {err_name} - {str(e)}")
         return []
+
+import math
+
+def haversine_dist(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    a = min(1.0, max(0.0, a))
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return round(R * c, 1)
 
 @app.get("/api/emergency-services")
 @limiter.limit("10/minute")
@@ -190,29 +207,39 @@ async def get_emergency_services(
     final_results = []
     seen_ids = set()
     for el in all_elements:
-        if el["id"] in seen_ids: continue
-        seen_ids.add(el["id"])
+        el_id = el.get("id")
+        if not el_id or el_id in seen_ids:
+            continue
+        seen_ids.add(el_id)
         tags = el.get("tags", {})
         category = tags.get("amenity") or tags.get("shop") or tags.get("emergency") or tags.get("healthcare")
         if not category: continue
         
-        is_trauma = "trauma" in tags.get("healthcare:speciality", "").lower() or tags.get("emergency") == "yes"
+        is_trauma = "trauma" in tags.get("healthcare:speciality", "").lower() or tags.get("emergency") == "yes" or "hospital" in (tags.get("healthcare") or "").lower()
         is_showroom = tags.get("shop") in ["car", "motorcycle"]
         
+        e_lat = el.get("lat") if el.get("lat") is not None else el.get("center", {}).get("lat")
+        e_lon = el.get("lon") if el.get("lon") is not None else el.get("center", {}).get("lon")
+        dist = haversine_dist(lat, lon, e_lat, e_lon) if e_lat is not None and e_lon is not None else None
+
         final_results.append({
-            "id": el.get("id"),
+            "id": el_id,
             "name": tags.get("name") or f"Nearby {category.replace('_', ' ').title()}",
             "category": category,
             "type": "trauma_center" if is_trauma else ("showroom" if is_showroom else category),
             "phone": tags.get("phone") or tags.get("contact:phone") or tags.get("emergency:phone"),
-            "lat": el.get("lat") or el.get("center", {}).get("lat"),
-            "lon": el.get("lon") or el.get("center", {}).get("lon"),
+            "lat": e_lat,
+            "lon": e_lon,
             "address": tags.get("addr:full") or f"{tags.get('addr:street', '')} {tags.get('addr:housenumber', '')}".strip(),
-            "is_recommended": is_trauma
+            "is_recommended": is_trauma,
+            "distance": dist
         })
     
-    final_results.sort(key=lambda x: x["is_recommended"], reverse=True)
-    await redis_client.set(geo_key, json.dumps(final_results), ex=300)
+    final_results.sort(key=lambda x: (0 if x["is_recommended"] else 1, x.get("distance") or 9999))
+    if final_results:
+        final_results[0]["is_nearest"] = True
+
+    await redis_client.set(geo_key, json.dumps(final_results), ex=600)
     return {"services": final_results}
 
 @app.get("/health")
