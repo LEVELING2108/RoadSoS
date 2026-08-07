@@ -16,26 +16,33 @@ ROADSoS is a high-performance, location-based platform designed to provide immed
 
 ## ✨ Latest Updates (August 2026)
 
-### ⚡ 1. Ultra-High Reliability & Memory Leak Elimination
+### 🧠 1. High-Performance Algorithmic Core (DSA Engine)
+- **2D KD-Tree Spatial Indexing ($O(\log N)$)**: Replaced flat array processing with an in-memory k-dimensional tree for sub-millisecond nearest emergency facility lookup and spatial range queries.
+- **Bounded Max-Heap Top-K Selection ($O(N \log K)$)**: Integrated priority queue candidate selection ($K=25$) on both client and server to eliminate full-array Timsort overhead ($O(N \log N)$).
+- **Geohash Grid Caching ($O(1)$)**: Encodes coordinates into 6-character Base32 Geohashes (Z-Order curves) for $O(1)$ spatial hashing and Redis cache keying (`svc:geohash_radius`).
+- **Prefix Trie Autocomplete ($O(L)$)**: Trie data structure for $O(L)$ search-as-you-type prefix lookup across 25 supported regional languages.
+- **Probabilistic Bloom Filter ($O(1)$)**: BitSet-based Bloom filter for instant set membership verification before triggering external API requests.
+
+### ⚡ 2. Ultra-High Reliability & Memory Leak Elimination
 - **Hardware Resource Cleanup**: Streamlined the rPPG Vitals Monitor and Geolocation Watcher lifecycle to automatically release active camera `MediaStream` video tracks and cancel animation frames upon toggle or component unmount.
 - **Strict WebSocket Routing**: Cleaned WebSocket URL host parsing to remove trailing slashes, ensuring strict compliance across Nginx, Cloudflare, and Docker reverse proxies.
 - **Defensive Geolocation & Haversine Math**: Added domain clamping to Haversine distance calculations (`a = min(1.0, max(0.0, a))`) to eliminate floating-point edge-case crashes, alongside explicit `is not None` handling for equator/prime-meridian (`0.0`) coordinates.
 
-### 📳 2. Shake to Activate SOS & Voice SOS
+### 📳 3. Shake to Activate SOS & Voice SOS
 - **Gesture-Based Triggers**: Added support for motion-activated SOS calls. Users can firmly shake their device to trigger an emergency session.
 - **3-Second Safety Window**: To prevent false alarms, a high-priority countdown overlay appears with haptic feedback, allowing users to cancel accidental triggers.
 - **Cross-Platform Compatibility**: Optimized for both Android and iOS devices using the `DeviceMotionEvent` API.
 
-### 🛡️ 3. "Instant Access" Security Model
+### 🛡️ 4. "Instant Access" Security Model
 - **Zero-Friction Emergency Use**: Removed user authentication/login requirements. Victims can access all life-saving features instantly without remembering passwords.
 - **Backend Rate Limiting**: Integrated `SlowApi` with Redis to protect the infrastructure from abuse while maintaining open access for legitimate users.
 - **Enhanced Privacy**: User profile data (Name, Blood Group, Medical Notes) is stored strictly on the local device, ensuring absolute privacy.
 
-### 🌍 4. Regional Language "Scan"
+### 🌍 5. Regional Language "Scan"
 - **GPS-Based Localization**: The app now detects the user's specific state (e.g., Tamil Nadu, Maharashtra) and automatically suggests or switches to the primary regional language.
 - **Scheduled Languages Support**: Full support for Indian Scheduled Languages (Hindi, Tamil, Telugu, Marathi, etc.) to assist non-English speakers during crises.
 
-### 🛠️ 5. Advanced Parallel Mirror Failover
+### 🛠️ 6. Advanced Parallel Mirror Failover
 - **Fast Mirror Timeout**: Reduced mirror connection timeouts to 10s (backend) and 3.5s (client fallback race) to fail over seamlessly during OpenStreetMap API congestion.
 - **Redis Connection Guard**: Pub/Sub listeners now cleanly unsubscribe and close on WebSocket disconnect without throwing cancelled task exceptions.
 
