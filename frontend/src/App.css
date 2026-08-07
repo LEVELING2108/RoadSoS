@@ -313,10 +313,138 @@ button:focus-visible, a:focus-visible {
 /* OTHER STYLES */
 .leaflet-container {
   width: 100%;
-  height: clamp(300px, 50vh, 500px);
+  height: clamp(350px, 55vh, 600px);
   border-radius: 20px;
   border: 1px solid var(--card-border);
   margin-bottom: 1.5rem;
+}
+
+/* CUSTOM LEAFLET MAP MARKERS & HUD OVERLAYS */
+.custom-leaflet-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+.marker-wrapper {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  position: relative;
+  transition: transform 0.2s ease;
+}
+
+.marker-wrapper:hover {
+  transform: scale(1.2);
+}
+
+.marker-wrapper.trauma {
+  background: linear-gradient(135deg, #ff3b30, #ff2d55);
+  border: 2px solid #ffffff;
+  color: white;
+  box-shadow: 0 0 16px rgba(255, 59, 48, 0.8);
+}
+
+.marker-wrapper.police {
+  background: linear-gradient(135deg, #007aff, #5856d6);
+  border: 2px solid #ffffff;
+  color: white;
+}
+
+.marker-wrapper.rescue {
+  background: linear-gradient(135deg, #ff9500, #ffcc00);
+  border: 2px solid #ffffff;
+  color: white;
+}
+
+.marker-wrapper.hospital {
+  background: linear-gradient(135deg, #34c759, #30d158);
+  border: 2px solid #ffffff;
+  color: white;
+}
+
+.nearest-pulse::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border-radius: 50%;
+  border: 2px solid #ff9500;
+  animation: pulseHalo 1.5s infinite ease-out;
+}
+
+@keyframes pulseHalo {
+  0% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+.map-badge-nearest {
+  position: absolute;
+  top: -16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ff9500;
+  color: #ffffff;
+  font-size: 0.6rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+
+.user-beacon-wrapper {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-beacon-dot {
+  width: 14px;
+  height: 14px;
+  background: #007aff;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  z-index: 2;
+  box-shadow: 0 0 10px rgba(0, 122, 255, 0.8);
+}
+
+.user-beacon-ring {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(0, 122, 255, 0.35);
+  animation: userPulse 2s infinite ease-out;
+}
+
+@keyframes userPulse {
+  0% { transform: scale(0.6); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+.leaflet-popup-content-wrapper {
+  background: var(--card-bg) !important;
+  color: var(--text-main) !important;
+  border-radius: 14px !important;
+  border: 1px solid var(--card-border) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important;
+  padding: 4px !important;
+}
+
+.leaflet-popup-tip {
+  background: var(--card-bg) !important;
 }
 
 .view-toggle {

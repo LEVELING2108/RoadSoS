@@ -900,10 +900,62 @@ out center 40;`;
                   )}
                 </AnimatePresence>
               </div>
-              <div className={`map-section ${viewMode === 'list' ? 'mobile-hidden' : ''}`}>
+              <div className={`map-section ${viewMode === 'list' ? 'mobile-hidden' : ''}`} style={{ position: 'relative' }}>
+                {selectedService && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -20 }} 
+                    animate={{ opacity: 1, y: 0 }} 
+                    style={{
+                      position: 'absolute',
+                      top: '12px',
+                      left: '12px',
+                      right: '12px',
+                      zIndex: 1000,
+                      background: 'rgba(28, 28, 30, 0.92)',
+                      backdropFilter: 'blur(16px)',
+                      border: '1px solid var(--primary-red)',
+                      borderRadius: '16px',
+                      padding: '12px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+                      color: '#ffffff'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--primary-red)', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                        🧭 Active Emergency Guidance
+                      </div>
+                      <div style={{ fontSize: '0.95rem', fontWeight: 'bold' }}>{selectedService.name}</div>
+                      {selectedService.distance !== undefined && (
+                        <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Distance: {selectedService.distance} km</div>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      {selectedService.phone && (
+                        <button className="btn btn-call" style={{ padding: '8px 12px', fontSize: '0.8rem' }} onClick={() => handleCall(selectedService.phone!)}>
+                          <Phone size={14} /> Call
+                        </button>
+                      )}
+                      <button className="theme-toggle" style={{ borderRadius: '8px' }} onClick={() => setSelectedService(null)}>
+                        <X size={16} />
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+
                 {location && (
-                  <Suspense fallback={<div className="loading-spinner">Loading Map...</div>}>
-                    <MapComponent location={location} services={services} routeCoordinates={routeCoordinates} />
+                  <Suspense fallback={<div className="loading-spinner">Loading Emergency Map...</div>}>
+                    <MapComponent 
+                      location={location} 
+                      services={services} 
+                      selectedService={selectedService}
+                      routeCoordinates={routeCoordinates} 
+                      onCall={handleCall}
+                      onNavigate={handleNavigate}
+                      onExternalMap={handleExternalMap}
+                    />
                   </Suspense>
                 )}
               </div>
