@@ -69,9 +69,10 @@ const CATEGORIES = [
 ];
 
 const DEFAULT_SEED_SERVICES: Service[] = [
+  // Medical Services (4)
   {
     id: 101,
-    name: "General Trauma & Emergency Care Hospital",
+    name: "General Emergency & Level-1 Trauma Care Hospital",
     category: "hospital",
     type: "trauma_center",
     phone: "112",
@@ -82,18 +83,42 @@ const DEFAULT_SEED_SERVICES: Service[] = [
   },
   {
     id: 102,
-    name: "City Emergency Ambulance & Trauma Unit",
+    name: "Apex Regional Emergency Hospital & ICU Unit",
     category: "hospital",
     type: "trauma_center",
     phone: "102",
     lat: 28.6142,
     lon: 77.2092,
-    address: "Rapid Dispatch Headquarters",
+    address: "Super Specialty Trauma Center",
     is_recommended: true
   },
   {
     id: 103,
-    name: "Central Police Control & Emergency Response",
+    name: "City Rapid Ambulance Dispatch Base",
+    category: "hospital",
+    type: "hospital",
+    phone: "108",
+    lat: 28.6130,
+    lon: 77.2110,
+    address: "Central Emergency Transport HQ",
+    is_recommended: false
+  },
+  {
+    id: 104,
+    name: "Lifeline Critical Care & Trauma Clinic",
+    category: "hospital",
+    type: "clinic",
+    phone: "112",
+    lat: 28.6150,
+    lon: 77.2070,
+    address: "24/7 First Response Clinic",
+    is_recommended: false
+  },
+
+  // Security / Police Services (4)
+  {
+    id: 201,
+    name: "Central Police Control & Emergency Response HQ",
     category: "police",
     type: "police",
     phone: "100",
@@ -102,18 +127,40 @@ const DEFAULT_SEED_SERVICES: Service[] = [
     address: "Highway Patrol & Security Headquarters"
   },
   {
-    id: 104,
-    name: "Fire & Emergency Rescue Dispatch Station",
-    category: "fire_station",
+    id: 202,
+    name: "Highway Security Patrol & Rapid Action Unit",
+    category: "police",
     type: "police",
-    phone: "101",
-    lat: 28.6147,
-    lon: 77.2097,
-    address: "Rapid Response Fire & Rescue Unit"
+    phone: "112",
+    lat: 28.6120,
+    lon: 77.2080,
+    address: "Sector 4 Security Post"
   },
   {
-    id: 105,
-    name: "24/7 Highway Rescue & Towing Services",
+    id: 203,
+    name: "District Fire & Disaster Rescue Station",
+    category: "police",
+    type: "fire_station",
+    phone: "101",
+    lat: 28.6160,
+    lon: 77.2120,
+    address: "Emergency Fire & Rescue Services"
+  },
+  {
+    id: 204,
+    name: "City Tactical Police & Bystander Protection Post",
+    category: "police",
+    type: "police",
+    phone: "100",
+    lat: 28.6110,
+    lon: 77.2050,
+    address: "Metropolitan Rapid Response"
+  },
+
+  // Repairs & Rescue Services (4)
+  {
+    id: 301,
+    name: "24/7 National Highway Rescue & Heavy Towing",
     category: "car_repair",
     type: "rescue",
     phone: "1033",
@@ -122,14 +169,34 @@ const DEFAULT_SEED_SERVICES: Service[] = [
     address: "National Towing & Vehicle Breakdown Rescue"
   },
   {
-    id: 106,
-    name: "Emergency Highway Auto Repair & Mobile Mechanic",
+    id: 302,
+    name: "Rapid Auto Repair & Emergency Mobile Mechanic",
     category: "car_repair",
     type: "rescue",
     phone: "1800-102-1033",
     lat: 28.6155,
     lon: 77.2105,
     address: "Mobile Vehicle Technical Assistance"
+  },
+  {
+    id: 303,
+    name: "Express Highway Tyre & Vehicle Repair Base",
+    category: "car_repair",
+    type: "rescue",
+    phone: "1033",
+    lat: 28.6125,
+    lon: 77.2115,
+    address: "Highway Breakdown Rescue Hub"
+  },
+  {
+    id: 304,
+    name: "Highway EV & Vehicle Rescue Recovery Station",
+    category: "car_repair",
+    type: "rescue",
+    phone: "1800-419-1033",
+    lat: 28.6170,
+    lon: 77.2060,
+    address: "24/7 Highway Technical Recovery"
   }
 ];
 
