@@ -188,11 +188,11 @@ async def get_emergency_services(
     if cached_data:
         return {"services": json.loads(cached_data)}
 
-    # SIMPLIFIED QUERIES FOR MAX COMPATIBILITY
+    # EXPANDED MULTI-CATEGORY QUERIES FOR HIGH RECOVERY
     queries = [
         f'[out:json][timeout:15];nwr(around:{radius},{lat},{lon})["amenity"~"hospital|clinic|doctors|pharmacy"];out center;',
-        f'[out:json][timeout:15];nwr(around:{radius},{lat},{lon})["amenity"~"police|fire_station"];out center;',
-        f'[out:json][timeout:15];nwr(around:{radius},{lat},{lon})["shop"~"car_repair|tyres|car|motorcycle"];out center;'
+        f'[out:json][timeout:15];(nwr(around:{radius},{lat},{lon})["amenity"~"police|fire_station"];nwr(around:{radius},{lat},{lon})["emergency"~"police|fire_station"];);out center;',
+        f'[out:json][timeout:15];(nwr(around:{radius},{lat},{lon})["shop"~"car_repair|tyres|car|motorcycle"];nwr(around:{radius},{lat},{lon})["emergency"~"towing|technical_rescue"];);out center;'
     ]
 
     tasks = [fetch_parallel(q, i) for i, q in enumerate(queries)]
@@ -238,8 +238,8 @@ async def get_emergency_services(
             "distance": dist
         })
     
-    # DSA Algorithm Upgrade: O(N log K) Top-K Selection using Bounded Max-Heap
-    top_services = TopKHeap.select_top_k(final_results, k=25)
+    # DSA Category-Balanced Selection: Guarantees Top Candidates for Medical, Security (Police), and Rescue (Repairs)
+    top_services = TopKHeap.select_top_k(final_results, k_per_category=10)
     if top_services:
         top_services[0]["is_nearest"] = True
 

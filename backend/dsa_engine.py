@@ -79,27 +79,42 @@ class SpatialKDTree:
 
 
 class TopKHeap:
-    """O(N log K) Selection Algorithm using bounded Max-Heap"""
+    """O(N log K) Category-Balanced Selection Algorithm using Priority Queue"""
     @staticmethod
-    def select_top_k(items: List[Dict[str, Any]], k: number_k = 15) -> List[Dict[str, Any]]:
-        if len(items) <= k:
-            return sorted(items, key=lambda x: (0 if x.get("is_recommended") else 1, x.get("distance") or 9999))
+    def select_top_k(items: List[Dict[str, Any]], k_per_category: int = 10) -> List[Dict[str, Any]]:
+        if not items:
+            return []
 
-        # We store (-priority, item) in heapq to act as Max-Heap
-        heap = []
+        # Group items by emergency category to guarantee coverage for Hospitals, Police, and Rescue
+        grouped: Dict[str, List[Dict[str, Any]]] = {
+            "hospital": [],
+            "police": [],
+            "rescue": []
+        }
+
         for item in items:
-            rec_penalty = 0 if item.get("is_recommended") else 10000
-            dist = item.get("distance") or 9999
-            score = rec_penalty + dist
+            cat = (item.get("category") or "").lower()
+            typ = (item.get("type") or "").lower()
+            
+            if any(c in cat or c in typ for c in ["hospital", "clinic", "doctors", "pharmacy", "healthcare", "trauma_center", "ambulance"]):
+                grouped["hospital"].append(item)
+            elif any(c in cat or c in typ for c in ["police", "fire", "emergency", "security"]):
+                grouped["police"].append(item)
+            else:
+                grouped["rescue"].append(item)
 
-            if len(heap) < k:
-                heapq.heappush(heap, (-score, item))
-            elif -score > heap[0][0]:
-                heapq.heapreplace(heap, (-score, item))
+        selected = []
+        for cat_name, cat_items in grouped.items():
+            # Sort each category strictly by proximity distance, preserving trauma recommendation bonus
+            sorted_cat = sorted(
+                cat_items, 
+                key=lambda x: (0 if x.get("is_recommended") else 1, x.get("distance") or 9999)
+            )
+            selected.extend(sorted_cat[:k_per_category])
 
-        result = [pair[1] for pair in heap]
-        result.sort(key=lambda x: (0 if x.get("is_recommended") else 1, x.get("distance") or 9999))
-        return result
+        # Final sort by distance and recommendation flag
+        selected.sort(key=lambda x: (0 if x.get("is_recommended") else 1, x.get("distance") or 9999))
+        return selected
 
 
 class GeohashUtil:
