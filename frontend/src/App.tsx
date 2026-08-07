@@ -99,17 +99,37 @@ const DEFAULT_SEED_SERVICES: Service[] = [
     phone: "100",
     lat: 28.6145,
     lon: 77.2095,
-    address: "Highway Patrol & Security"
+    address: "Highway Patrol & Security Headquarters"
   },
   {
     id: 104,
+    name: "Fire & Emergency Rescue Dispatch Station",
+    category: "fire_station",
+    type: "police",
+    phone: "101",
+    lat: 28.6147,
+    lon: 77.2097,
+    address: "Rapid Response Fire & Rescue Unit"
+  },
+  {
+    id: 105,
     name: "24/7 Highway Rescue & Towing Services",
-    category: "rescue",
-    type: "car_repair",
+    category: "car_repair",
+    type: "rescue",
     phone: "1033",
     lat: 28.6150,
     lon: 77.2100,
-    address: "National Towing & Vehicle Rescue"
+    address: "National Towing & Vehicle Breakdown Rescue"
+  },
+  {
+    id: 106,
+    name: "Emergency Highway Auto Repair & Mobile Mechanic",
+    category: "car_repair",
+    type: "rescue",
+    phone: "1800-102-1033",
+    lat: 28.6155,
+    lon: 77.2105,
+    address: "Mobile Vehicle Technical Assistance"
   }
 ];
 
@@ -301,8 +321,26 @@ out center 40;`;
         });
       }
       
-      // DSA Optimization: Priority Queue Top-K Selection in O(N log K) time
-      const topK = getTopKItems(parsed, 25, (s) => (s.is_recommended ? 0 : 10000) + (s.distance || 9999));
+      // DSA Optimization: Category-Balanced Top-K Selection
+      const grouped: Record<string, Service[]> = { hospital: [], police: [], rescue: [] };
+      for (const s of parsed) {
+        const cat = s.category.toLowerCase();
+        const typ = (s.type || '').toLowerCase();
+        if (['hospital', 'clinic', 'doctors', 'pharmacy', 'ambulance', 'healthcare', 'trauma'].some(c => cat.includes(c) || typ.includes(c))) {
+          grouped.hospital.push(s);
+        } else if (['police', 'fire', 'emergency', 'security'].some(c => cat.includes(c) || typ.includes(c))) {
+          grouped.police.push(s);
+        } else {
+          grouped.rescue.push(s);
+        }
+      }
+
+      const topHospitals = getTopKItems(grouped.hospital, 10, (s) => (s.is_recommended ? 0 : 100) + (s.distance || 9999));
+      const topPolice = getTopKItems(grouped.police, 8, (s) => s.distance || 9999);
+      const topRescue = getTopKItems(grouped.rescue, 8, (s) => s.distance || 9999);
+
+      const topK = [...topHospitals, ...topPolice, ...topRescue];
+      topK.sort((a, b) => (a.is_recommended !== b.is_recommended ? (a.is_recommended ? -1 : 1) : (a.distance || 0) - (b.distance || 0)));
 
       if (topK.length > 0) {
         topK[0].is_nearest = true;
@@ -567,16 +605,19 @@ out center 40;`;
   const filteredServices = useMemo(() => {
     return services.filter(s => {
       if (!s.category) return false;
+      const cat = s.category.toLowerCase();
+      const typ = (s.type || '').toLowerCase();
+
       if (activeCategory === 'hospital') {
-        return ['hospital', 'clinic', 'doctors', 'pharmacy', 'ambulance_station', 'healthcare'].includes(s.category);
+        return ['hospital', 'clinic', 'doctors', 'pharmacy', 'ambulance', 'healthcare', 'trauma'].some(c => cat.includes(c) || typ.includes(c));
       }
       if (activeCategory === 'police') {
-        return ['police', 'fire_station', 'emergency_phone'].includes(s.category);
+        return ['police', 'fire', 'emergency', 'security', 'guard'].some(c => cat.includes(c) || typ.includes(c));
       }
       if (activeCategory === 'rescue') {
-        return ['car_repair', 'motorcycle_repair', 'tyres', 'fuel', 'tow_truck', 'mechanic', 'breakdown_service', 'bicycle_repair_station', 'car', 'motorcycle'].includes(s.category);
+        return ['car_repair', 'motorcycle', 'tyres', 'fuel', 'tow', 'mechanic', 'breakdown', 'bicycle', 'car', 'rescue', 'repair', 'showroom'].some(c => cat.includes(c) || typ.includes(c));
       }
-      return s.category === activeCategory || s.category.includes(activeCategory);
+      return cat.includes(activeCategory) || typ.includes(activeCategory);
     });
   }, [services, activeCategory]);
 
