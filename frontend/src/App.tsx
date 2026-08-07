@@ -32,6 +32,10 @@ const MapComponent = lazy(() => import('./components/MapComponent'));
 import ServiceCard from './components/ServiceCard';
 import ThemeToggle from './components/ThemeToggle';
 
+// DSA Optimization Imports
+import { getTopKItems } from './utils/priorityQueue';
+import { KDTree2D } from './utils/kdTree';
+
 // Configure Production API URL
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '') + '/';
 axios.defaults.baseURL = API_URL;
@@ -297,18 +301,13 @@ out center 40;`;
         });
       }
       
-      // Sort by Trauma Priority first (closest trauma center top), then strictly by proximity distance
-      parsed.sort((a, b) => {
-        if (a.is_recommended !== b.is_recommended) {
-          return a.is_recommended ? -1 : 1;
-        }
-        return (a.distance || 0) - (b.distance || 0);
-      });
+      // DSA Optimization: Priority Queue Top-K Selection in O(N log K) time
+      const topK = getTopKItems(parsed, 25, (s) => (s.is_recommended ? 0 : 10000) + (s.distance || 9999));
 
-      if (parsed.length > 0) {
-        parsed[0].is_nearest = true;
+      if (topK.length > 0) {
+        topK[0].is_nearest = true;
       }
-      return parsed;
+      return topK;
     };
 
     try {
@@ -580,6 +579,19 @@ out center 40;`;
       return s.category === activeCategory || s.category.includes(activeCategory);
     });
   }, [services, activeCategory]);
+
+  // DSA Spatial Index: Build 2D KD-Tree for O(log N) nearest neighbor lookup
+  const spatialKdTree = useMemo(() => {
+    return new KDTree2D(filteredServices);
+  }, [filteredServices]);
+
+  // Log spatial KD-Tree status
+  useEffect(() => {
+    if (location && spatialKdTree.root) {
+      const nearest = spatialKdTree.findNearest(location);
+      if (nearest) console.log("KDTree O(log N) Nearest Facility:", nearest.point.name, nearest.distance, "km");
+    }
+  }, [location, spatialKdTree]);
 
   const toggleListening = useCallback(() => {
     triggerHaptic(50);

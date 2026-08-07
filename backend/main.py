@@ -172,6 +172,8 @@ def haversine_dist(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return round(R * c, 1)
 
+from dsa_engine import SpatialKDTree, TopKHeap, GeohashUtil
+
 @app.get("/api/emergency-services")
 @limiter.limit("10/minute")
 async def get_emergency_services(
@@ -180,7 +182,8 @@ async def get_emergency_services(
     lon: float = Query(..., description="Longitude"),
     radius: int = Query(5000, description="Radius")
 ):
-    geo_key = f"svc:{round(lat, 3)}_{round(lon, 3)}_{radius}"
+    geohash_code = GeohashUtil.encode(lat, lon, precision=6)
+    geo_key = f"svc:{geohash_code}_{radius}"
     cached_data = await redis_client.get(geo_key)
     if cached_data:
         return {"services": json.loads(cached_data)}
@@ -235,12 +238,13 @@ async def get_emergency_services(
             "distance": dist
         })
     
-    final_results.sort(key=lambda x: (0 if x["is_recommended"] else 1, x.get("distance") or 9999))
-    if final_results:
-        final_results[0]["is_nearest"] = True
+    # DSA Algorithm Upgrade: O(N log K) Top-K Selection using Bounded Max-Heap
+    top_services = TopKHeap.select_top_k(final_results, k=25)
+    if top_services:
+        top_services[0]["is_nearest"] = True
 
-    await redis_client.set(geo_key, json.dumps(final_results), ex=600)
-    return {"services": final_results}
+    await redis_client.set(geo_key, json.dumps(top_services), ex=600)
+    return {"services": top_services}
 
 @app.get("/health")
 def health_check():
@@ -249,3 +253,4 @@ def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
