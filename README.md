@@ -14,25 +14,30 @@ ROADSoS is a high-performance, location-based platform designed to provide immed
 
 ---
 
-## ✨ Latest Updates (May 2026)
+## ✨ Latest Updates (August 2026)
 
-### 📳 1. Shake to Activate SOS
+### ⚡ 1. Ultra-High Reliability & Memory Leak Elimination
+- **Hardware Resource Cleanup**: Streamlined the rPPG Vitals Monitor and Geolocation Watcher lifecycle to automatically release active camera `MediaStream` video tracks and cancel animation frames upon toggle or component unmount.
+- **Strict WebSocket Routing**: Cleaned WebSocket URL host parsing to remove trailing slashes, ensuring strict compliance across Nginx, Cloudflare, and Docker reverse proxies.
+- **Defensive Geolocation & Haversine Math**: Added domain clamping to Haversine distance calculations (`a = min(1.0, max(0.0, a))`) to eliminate floating-point edge-case crashes, alongside explicit `is not None` handling for equator/prime-meridian (`0.0`) coordinates.
+
+### 📳 2. Shake to Activate SOS & Voice SOS
 - **Gesture-Based Triggers**: Added support for motion-activated SOS calls. Users can firmly shake their device to trigger an emergency session.
 - **3-Second Safety Window**: To prevent false alarms, a high-priority countdown overlay appears with haptic feedback, allowing users to cancel accidental triggers.
 - **Cross-Platform Compatibility**: Optimized for both Android and iOS devices using the `DeviceMotionEvent` API.
 
-### 🛡️ 2. "Instant Access" Security Model
+### 🛡️ 3. "Instant Access" Security Model
 - **Zero-Friction Emergency Use**: Removed user authentication/login requirements. Victims can access all life-saving features instantly without remembering passwords.
 - **Backend Rate Limiting**: Integrated `SlowApi` with Redis to protect the infrastructure from abuse while maintaining open access for legitimate users.
 - **Enhanced Privacy**: User profile data (Name, Blood Group, Medical Notes) is stored strictly on the local device, ensuring absolute privacy.
 
-### 🌍 3. Regional Language "Scan"
+### 🌍 4. Regional Language "Scan"
 - **GPS-Based Localization**: The app now detects the user's specific state (e.g., Tamil Nadu, Maharashtra) and automatically suggests or switches to the primary regional language.
 - **Scheduled Languages Support**: Full support for Indian Scheduled Languages (Hindi, Tamil, Telugu, Marathi, etc.) to assist non-English speakers during crises.
 
-### 🛠️ 4. Advanced Mirror Reliability
-- **Smart Failover Tracking**: Backend now tracks the health of multiple global Overpass API mirrors. If one provider fails, the system automatically redirects to a stable mirror in real-time.
-- **Detailed Error Logging**: Improved diagnostics to capture specific mirror failure types (Timeouts, Connection Errors) for better maintenance.
+### 🛠️ 5. Advanced Parallel Mirror Failover
+- **Fast Mirror Timeout**: Reduced mirror connection timeouts to 10s (backend) and 3.5s (client fallback race) to fail over seamlessly during OpenStreetMap API congestion.
+- **Redis Connection Guard**: Pub/Sub listeners now cleanly unsubscribe and close on WebSocket disconnect without throwing cancelled task exceptions.
 
 ---
 
